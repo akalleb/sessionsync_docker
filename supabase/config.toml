@@ -1,0 +1,39 @@
+project_id = "gwfsqszdtlpjosersszb"
+
+[auth.email]
+enable_confirmations = false
+enable_signup = true
+double_confirm_changes = false
+
+[functions.process-transcript]
+enabled = true
+verify_jwt = true
+import_map = "./functions/process-transcript/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/process-transcript/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/process-transcript/*.html" ]
+
+[functions.summarize-content]
+enabled = true
+verify_jwt = true
+import_map = "./functions/summarize-content/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/summarize-content/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/summarize-content/*.html" ]
+
+[functions.process-youtube]
+enabled = true
+verify_jwt = true
+import_map = "./functions/process-youtube/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/process-youtube/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/process-youtube/*.html" ]
