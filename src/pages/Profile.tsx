@@ -91,8 +91,6 @@ export default function Profile() {
       }
 
       const updates = {
-        id: profile?.id,
-        user_id: user?.id,
         nome: formData.nome,
         telefone: formData.telefone,
         cargo: formData.cargo,
@@ -100,9 +98,15 @@ export default function Profile() {
         updated_at: new Date().toISOString(),
       };
 
-      const { error } = await supabase.from('profiles').upsert(updates);
+      // Use backend endpoint to bypass RLS
+      const result = await apiCall('/update-profile', {
+        userId: user.id,
+        updates: updates
+      });
 
-      if (error) throw error;
+      if (!result || !result.success) {
+         throw new Error(result?.error || 'Erro ao atualizar perfil via backend.');
+      }
 
       toast.success('Perfil atualizado com sucesso!');
     } catch (error) {

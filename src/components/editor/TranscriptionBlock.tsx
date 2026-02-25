@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { GripVertical, Trash2, Edit3, Sparkles, ChevronDown, ChevronUp, Clock, MessageSquarePlus, Maximize2, Minimize2 } from 'lucide-react';
+import { GripVertical, Trash2, Edit3, Sparkles, ChevronDown, ChevronUp, Clock, MessageSquarePlus, Maximize2, Minimize2, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -46,6 +46,10 @@ export function TranscriptionBlock({
     onUpdate({ ...block, type, title: blockTypeLabels[type] });
   };
 
+  const handleSpeakerChange = (speaker: string) => {
+    onUpdate({ ...block, speaker });
+  };
+
   const handleCustomSummarize = () => {
     onSummarize(block.id, customPrompt);
     setIsPromptOpen(false);
@@ -54,6 +58,7 @@ export function TranscriptionBlock({
 
   return (
     <div
+      id={block.id}
       className={cn(
         "bg-card/80 backdrop-blur-sm border border-border/60 rounded-xl shadow-sm transition-all duration-300 group hover:shadow-md hover:border-primary/20",
         isDragging && "shadow-xl scale-[1.02] rotate-1 border-primary/40 bg-card z-50 ring-2 ring-primary/20",
@@ -70,7 +75,7 @@ export function TranscriptionBlock({
       )}
 
       {/* Header */}
-      <div className="flex items-center gap-2 md:gap-3 px-3 md:px-4 py-2 md:py-3 border-b border-border/40 bg-muted/20 rounded-t-xl">
+      <div className="flex items-center gap-2 md:gap-3 px-3 md:px-4 py-2 md:py-3 border-b border-border/40 bg-muted/20 rounded-t-xl flex-wrap">
         <Tooltip>
           <TooltipTrigger asChild>
             <button
@@ -97,16 +102,30 @@ export function TranscriptionBlock({
         </Select>
 
         {block.timestamp && (
-          <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground bg-background/40 px-2 py-1 rounded-full border border-border/30">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-background/40 px-2 py-1 rounded-full border border-border/30" title="Timestamp estimado">
             <Clock className="w-3 h-3" />
             <span className="font-mono">{block.timestamp}</span>
+            {block.timestamp_estimated && <span className="text-[10px] text-muted-foreground/50">*</span>}
           </div>
         )}
 
-        {block.speaker && (
-          <div className="text-xs font-medium text-foreground/80 max-w-[150px] truncate hidden md:block px-2">
-            {block.speaker}
-          </div>
+        {isEditing ? (
+             <div className="flex items-center gap-1 bg-background/50 border border-border/30 rounded-md px-2 py-0.5">
+                 <User className="w-3 h-3 text-muted-foreground" />
+                 <Input 
+                    value={block.speaker || ''} 
+                    onChange={(e) => handleSpeakerChange(e.target.value)}
+                    className="h-6 w-32 text-xs border-0 bg-transparent focus-visible:ring-0 p-0"
+                    placeholder="Orador..."
+                 />
+             </div>
+        ) : (
+            block.speaker && (
+              <div className="flex items-center gap-1.5 text-xs font-medium text-foreground/80 bg-primary/5 px-2 py-1 rounded-full border border-primary/10 max-w-[150px]">
+                <User className="w-3 h-3 text-primary/70" />
+                <span className="truncate">{block.speaker}</span>
+              </div>
+            )
         )}
 
         <div className="flex-1" />

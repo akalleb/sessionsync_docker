@@ -405,6 +405,7 @@ const Vereadores = () => {
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>{editingVereador ? 'Editar Vereador' : 'Novo Vereador'}</DialogTitle>
+                  <DialogDescription>Preencha os dados do vereador.</DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="space-y-2">

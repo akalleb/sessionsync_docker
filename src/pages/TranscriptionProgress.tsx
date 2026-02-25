@@ -8,7 +8,6 @@ import { apiCall } from '@/lib/utils';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { TranscriptionBlock, blockTypeLabels } from '@/types/transcription';
-import { Json } from '@/integrations/supabase/types';
 import { useAuth } from '@/hooks/use-auth';
 
 interface AssemblyChapter {
@@ -25,9 +24,11 @@ interface MappedUtterance {
   vereadorApelido?: string | null;
   vereadorNome?: string | null;
   speaker?: string | null;
+  text?: string;
 }
 
 function formatTimestamp(ms: number): string {
+  if (typeof ms !== 'number' || isNaN(ms)) return "00:00:00";
   const totalSeconds = Math.floor(ms / 1000);
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
@@ -41,47 +42,48 @@ function mapChaptersToBlocks(
 ): TranscriptionBlock[] {
   return chapters.map((chapter, index) => {
     let speaker: string | undefined;
+    let timestamp_ms: number = chapter.start;
+    let timestamp_estimated = false;
 
     if (Array.isArray(mappedUtterances) && mappedUtterances.length > 0) {
+      // Find utterances that overlap with the chapter time range
       const overlaps = mappedUtterances.filter((u) => {
         const us = typeof u.start === 'number' ? u.start : undefined;
         const ue = typeof u.end === 'number' ? u.end : undefined;
         if (us === undefined || ue === undefined) return false;
+        // Check for intersection
         return us < chapter.end && ue > chapter.start;
       });
 
       if (overlaps.length > 0) {
+        // Use the start time of the first utterance in the block as the accurate timestamp
+        const minStart = Math.min(...overlaps.map(u => u.start as number));
+        timestamp_ms = minStart;
+
+        // Determine predominant speaker based on duration overlap
         const scores = new Map<string, number>();
 
         for (const u of overlaps) {
-          const apelido =
-            typeof u.vereadorApelido === 'string' && u.vereadorApelido.trim().length > 0
-              ? u.vereadorApelido.trim()
-              : '';
-          const nome =
-            typeof u.vereadorNome === 'string' && u.vereadorNome.trim().length > 0
-              ? u.vereadorNome.trim()
-              : '';
-          const speakerLabel =
-            typeof u.speaker === 'string' && u.speaker.trim().length > 0
-              ? u.speaker.trim()
-              : '';
+          const apelido = typeof u.vereadorApelido === 'string' && u.vereadorApelido.trim().length > 0
+              ? u.vereadorApelido.trim() : '';
+          const nome = typeof u.vereadorNome === 'string' && u.vereadorNome.trim().length > 0
+              ? u.vereadorNome.trim() : '';
+          const speakerLabel = typeof u.speaker === 'string' && u.speaker.trim().length > 0
+              ? u.speaker.trim() : '';
 
           const name = apelido || nome || speakerLabel;
           if (!name) continue;
 
-          const dur =
-            typeof u.end === 'number' &&
-            typeof u.start === 'number' &&
-            u.end > u.start
-              ? u.end - u.start
-              : 1;
+          // Calculate intersection duration
+          const overlapStart = Math.max(u.start!, chapter.start);
+          const overlapEnd = Math.min(u.end!, chapter.end);
+          const dur = Math.max(0, overlapEnd - overlapStart);
 
           scores.set(name, (scores.get(name) ?? 0) + dur);
         }
 
         let bestName: string | undefined;
-        let bestScore = 0;
+        let bestScore = -1;
 
         scores.forEach((score, name) => {
           if (score > bestScore) {
@@ -91,7 +93,11 @@ function mapChaptersToBlocks(
         });
 
         speaker = bestName;
+      } else {
+        timestamp_estimated = true;
       }
+    } else {
+        timestamp_estimated = true;
     }
 
     return {
@@ -99,7 +105,9 @@ function mapChaptersToBlocks(
       type: 'outros',
       title: chapter.headline || blockTypeLabels.outros,
       content: chapter.summary || chapter.gist || '',
-      timestamp: formatTimestamp(chapter.start),
+      timestamp: formatTimestamp(timestamp_ms),
+      timestamp_ms: timestamp_ms,
+      timestamp_estimated: timestamp_estimated,
       order: index,
       speaker,
     };
@@ -114,6 +122,7 @@ export default function TranscriptionProgressPage() {
   const [currentStep, setCurrentStep] = useState(1);
   const [progress, setProgress] = useState(10);
   const [status, setStatus] = useState<string>('queued');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [estimatedTime, setEstimatedTime] = useState<string>('Iniciando...');
   const [savedSessionId, setSavedSessionId] = useState<string | null>(null);
   
@@ -167,7 +176,7 @@ export default function TranscriptionProgressPage() {
         }
 
         const payload = {
-            user_id: userId,
+            userId: userId,
             title,
             date: dateValue,
             status: 'completed',
@@ -175,38 +184,22 @@ export default function TranscriptionProgressPage() {
             audio_url: audioUrl,
             youtube_url: youtubeUrl || null,
             transcript: transcriptText,
-            blocks: (blocks.length > 0 ? blocks : []) as unknown as Json,
+            blocks: (blocks.length > 0 ? blocks : []),
             camara_id: profile?.camara_id || null
-          };
+        };
 
-        let sessionData;
-        let error;
+        const result = await apiCall('/save-session', payload);
 
-        if (existingList && existingList.length > 0) {
-          const existingId = (existingList[0] as { id: string }).id;
-          const updateResult = await supabase
-            .from('sessions')
-            .update(payload)
-            .eq('id', existingId)
-            .select()
-            .single();
-          sessionData = updateResult.data;
-          error = updateResult.error;
-        } else {
-          const insertResult = await supabase
-            .from('sessions')
-            .insert(payload)
-            .select()
-            .single();
-          sessionData = insertResult.data;
-          error = insertResult.error;
+        if (!result || !result.success || !result.data) {
+          const msg = result?.error || 'Erro desconhecido ao salvar sessão.';
+          console.error("Error saving session via backend:", msg);
+          toast.error(`Falha ao salvar: ${msg}`);
+          return { error: msg };
         }
 
-        if (error) {
-          console.error("Error saving session:", error);
-          toast.error('Não foi possível salvar a sessão transcrita.');
-          return null;
-        } else if (sessionData) {
+        const sessionData = result.data;
+
+        if (sessionData) {
           try {
              apiCall('/ingest-session', { sessionId: sessionData.id });
              toast.info('Ingerindo dados para o Assistente...', { duration: 3000 });
@@ -222,12 +215,13 @@ export default function TranscriptionProgressPage() {
           setProgress(100);
           setEstimatedTime('Concluído!');
           
-          return sessionData.id;
+          return { id: sessionData.id };
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error(err);
-        toast.error('Erro inesperado ao salvar a sessão transcrita.');
-        return null;
+        const msg = err.message || 'Erro inesperado.';
+        toast.error(`Erro ao salvar: ${msg}`);
+        return { error: msg };
       }
     },
     [audioUrl, sessionDate, sessionTitle, youtubeUrl, profile]
@@ -266,7 +260,6 @@ export default function TranscriptionProgressPage() {
                  setCurrentStep(3); // Organize
                  
                  let normalizedText = data.text as string;
-
                  let mappedUtterances: MappedUtterance[] | null = null;
 
                  try {
@@ -284,9 +277,10 @@ export default function TranscriptionProgressPage() {
                  }
 
                  try {
-                     if (audioUrl && profile?.camara_id && Array.isArray(data.utterances) && data.utterances.length > 0) {
+                     // Try to map speakers even if not mapped to Vereadores yet, to get speaker labels
+                     if (Array.isArray(data.utterances) && data.utterances.length > 0 && profile?.camara_id) {
                          const mappingResult = await apiCall('/map-utterances-speakers', {
-                             audioUrl,
+                             audioUrl: audioUrl || 'youtube-audio', // Fallback for youtube
                              camaraId: profile.camara_id,
                              utterances: data.utterances,
                          });
@@ -315,20 +309,29 @@ export default function TranscriptionProgressPage() {
                     }
                  }
 
-                 const sid = await saveSession(normalizedText, blocksToSave);
-                 if (sid) {
-                     setSavedSessionId(sid);
+                 const result = await saveSession(normalizedText, blocksToSave);
+                 
+                 if (result && result.id) {
+                     setSavedSessionId(result.id);
+                 } else if (result && result.error) {
+                     window.clearInterval(interval);
+                     setStatus('error');
+                     setErrorMessage(result.error);
+                     toast.error('Erro crítico ao salvar. O processo foi interrompido.');
                  }
              } else {
                  toast.error("Transcrição vazia recebida.");
                  setStatus('error');
+                 setErrorMessage("Transcrição vazia recebida do servidor.");
              }
         } else if (newStatus === 'error') {
             window.clearInterval(interval);
-            toast.error('Erro na transcrição do áudio');
+            const errMsg = data.error || 'Erro desconhecido durante transcrição.';
+            toast.error(`Erro: ${errMsg}`);
             setStatus('error');
+            setErrorMessage(errMsg);
         }
-      } catch (err) {
+      } catch (err: any) {
           console.error("Polling error", err);
       }
     }, 5000);
@@ -336,32 +339,50 @@ export default function TranscriptionProgressPage() {
     return () => window.clearInterval(interval);
   }, [id, saveSession, profile, audioUrl]);
 
+  const handleCancel = () => {
+    localStorage.removeItem('pending_transcript_id');
+    localStorage.removeItem('pending_session_title');
+    localStorage.removeItem('pending_session_date');
+    localStorage.removeItem('pending_youtube_url');
+    localStorage.removeItem('pending_audio_url');
+    
+    toast.info('Processo cancelado.');
+    navigate('/upload');
+  };
+
   const isComplete = currentStep === 4 && progress >= 100;
 
   return (
     <MainLayout>
       <div className="p-8 max-w-4xl mx-auto">
-        {/* Header */}
         <div className="mb-8 animate-fade-in">
           <h1 className="text-3xl font-bold text-foreground">
-            {isComplete ? 'Transcrição Concluída!' : 'Processando Transcrição...'}
+            {isComplete ? 'Transcrição Concluída!' : status === 'error' ? 'Erro na Transcrição' : 'Processando Transcrição...'}
           </h1>
           <p className="text-muted-foreground mt-1">
             {isComplete 
               ? 'Sua sessão está pronta para organização e edição'
-              : 'Aguarde enquanto processamos o áudio da sessão'
+              : status === 'error' 
+                ? 'Ocorreu um problema durante o processamento.'
+                : 'Aguarde enquanto processamos o áudio da sessão'
             }
           </p>
         </div>
 
-        {/* Progress Card */}
+        {errorMessage && (
+            <div className="mb-8 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-600 dark:text-red-400">
+                <p className="font-semibold">Erro Detalhado:</p>
+                <p>{errorMessage}</p>
+            </div>
+        )}
+
         <div className="bg-card rounded-xl border border-border shadow-card p-8 mb-8 animate-slide-up">
           <div className="mb-8">
             <h2 className="font-semibold text-foreground mb-2">
               {sessionTitle || 'Nova Sessão'}
             </h2>
             <p className="text-sm text-muted-foreground">
-                {sessionDate ? new Date(sessionDate).toLocaleDateString('pt-BR') : 'Data não informada'} • Status: {status === 'queued' ? 'Na fila' : status === 'processing' ? 'Processando' : status === 'completed' ? 'Concluído' : status}
+              {sessionDate ? new Date(sessionDate).toLocaleDateString('pt-BR') : 'Data não informada'} • Status: {status === 'queued' ? 'Na fila' : status === 'processing' ? 'Processando' : status === 'completed' ? 'Concluído' : status}
             </p>
           </div>
 
@@ -372,7 +393,6 @@ export default function TranscriptionProgressPage() {
           />
         </div>
 
-        {/* Actions */}
         <div className="flex items-center gap-4 animate-slide-up" style={{ animationDelay: '100ms' }}>
           {isComplete && savedSessionId ? (
             <Button
@@ -386,21 +406,20 @@ export default function TranscriptionProgressPage() {
             </Button>
           ) : (
             <>
-              {/* Only show cancel if not almost done */}
-              {progress < 90 && (
+              {(progress < 90 || status === 'error') && (
                   <Button
-                    variant="outline"
+                    variant="destructive"
                     size="lg"
                     className="gap-2"
-                    onClick={() => navigate('/upload')}
+                    onClick={handleCancel}
                   >
                     <XCircle className="w-5 h-5" />
-                    Voltar
+                    {status === 'error' ? 'Sair / Tentar Novamente' : 'Cancelar'}
                   </Button>
               )}
               <div className="flex-1" />
               <p className="text-sm text-muted-foreground">
-                Você pode sair desta página. A transcrição continuará em segundo plano.
+                Se sair, a transcrição continuará em segundo plano.
               </p>
             </>
           )}

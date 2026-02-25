@@ -17,6 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import {
   AlertDialog,
@@ -195,6 +196,7 @@ export function SortablePautaItem({
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Editar Item</DialogTitle>
+                  <DialogDescription>Faça as alterações necessárias no item da pauta.</DialogDescription>
                 </DialogHeader>
                 {renderItemForm()}
               </DialogContent>

@@ -4,16 +4,15 @@ import { BlockEditor } from '@/components/editor/BlockEditor';
 import { MinutesEditor } from '@/components/editor/MinutesEditor';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Save, Sparkles, FileText, Blocks, Copy, Search, ChevronUp, ChevronDown, PlayCircle, Video, RefreshCw, Info, HelpCircle } from 'lucide-react';
+import { ArrowLeft, Save, Sparkles, FileText, Blocks, Copy, Search, ChevronUp, ChevronDown, PlayCircle, Video, RefreshCw, Info, HelpCircle, Users, MessageSquare, Clock } from 'lucide-react';
 import { AspectRatio } from '@/components/ui/aspect-ratio';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { cn } from '@/lib/utils';
+import { cn, apiCall } from '@/lib/utils';
 import { Link, useParams } from 'react-router-dom';
 import { TranscriptionBlock } from '@/types/transcription';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { Json } from '@/integrations/supabase/types';
-import { apiCall } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import {
   Tooltip,
@@ -30,6 +29,17 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import type { IImageOptions } from 'docx';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 
 interface ProfileWithPreferences {
   nome: string | null;
@@ -62,6 +72,15 @@ export default function SessionEditor() {
   const [camaraInfo, setCamaraInfo] = useState<{ nome: string; logo_url: string | null } | null>(null);
   const [activeTab, setActiveTab] = useState('blocks');
   const [hasSelection, setHasSelection] = useState(false);
+  
+  // Speaker Tab State
+  const [selectedSpeaker, setSelectedSpeaker] = useState<string | null>(null);
+  const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
+
+  // Minutes Generation State
+  const [isMinutesModalOpen, setIsMinutesModalOpen] = useState(false);
+  const [minutesType, setMinutesType] = useState<'ordinaria' | 'extraordinaria' | 'solene'>('ordinaria');
+  const [generationStep, setGenerationStep] = useState<string>('');
 
   // Helper to extract YouTube ID
   const getYouTubeID = (url: string) => {
@@ -116,10 +135,16 @@ export default function SessionEditor() {
         .from('sessions')
         .select('*')
         .eq('id', sessionId)
-        .single();
+        .maybeSingle();
 
       if (error) {
         throw error;
+      }
+
+      if (!data) {
+        console.warn('Session not found via RLS. Trying backend fetch...');
+        toast.error('Sessão não encontrada ou acesso negado.');
+        return;
       }
 
       if (data) {
@@ -235,7 +260,6 @@ export default function SessionEditor() {
         setIsUploadingAudio(true);
         toast.info('Iniciando upload do novo áudio...');
 
-        // 1. Upload to R2 (Replace Supabase logic)
         const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
         const fileName = `session_audio/${id}/${Date.now()}-${sanitizedName}`;
 
@@ -254,7 +278,6 @@ export default function SessionEditor() {
         
         const newAudioUrl = publicUrl;
 
-        // 2. Update Session
         const { error: dbError } = await supabase
             .from('sessions')
             .update({ audio_url: newAudioUrl })
@@ -280,7 +303,6 @@ export default function SessionEditor() {
 
   const syncKnowledgeBase = async () => {
     try {
-      // Fire and forget - don't await response to not block UI
       apiCall('/ingest-session', { sessionId: id })
         .catch(err => console.error('Background sync failed:', err));
     } catch (e) {
@@ -305,7 +327,6 @@ export default function SessionEditor() {
         setBlocks(gptData.blocks);
         toast.success('Blocos organizados com sucesso!');
         
-        // Auto-save the organized blocks
         await supabase
         .from('sessions')
         .update({
@@ -313,7 +334,6 @@ export default function SessionEditor() {
         })
         .eq('id', id);
 
-        // Auto-sync knowledge base
         syncKnowledgeBase();
         
       } else {
@@ -326,7 +346,6 @@ export default function SessionEditor() {
   };
 
   const generateMinutesContent = (currentBlocks: TranscriptionBlock[]) => {
-    // Helper to get block content by type
     const getContent = (type: string) => {
       const block = currentBlocks.find(b => b.type === type);
       return block?.summary || block?.content || '';
@@ -394,7 +413,6 @@ ${encerramento}`;
         );
         setBlocks(updatedBlocks);
         
-        // Update minutes
         const newMinutes = generateMinutesContent(updatedBlocks);
         setMinutesContent(newMinutes);
 
@@ -430,11 +448,9 @@ ${encerramento}`;
       const newBlocks = [...blocks];
       let successCount = 0;
 
-      // Process sequentially to ensure quality and avoid rate limits
       for (let i = 0; i < newBlocks.length; i++) {
         const block = newBlocks[i];
         
-        // Skip if empty content
         if (!block.content) continue;
 
         setProcessingBlockId(block.id);
@@ -450,7 +466,6 @@ ${encerramento}`;
               if (aiData?.summary) {
                 newBlocks[i] = { ...block, summary: aiData.summary };
                 successCount++;
-                // Update state progressively to show progress
                 setBlocks([...newBlocks]); 
               }
         } catch (err) {
@@ -464,11 +479,9 @@ ${encerramento}`;
       if (successCount > 0) {
         toast.success(`${successCount} resumos gerados com sucesso!`);
         
-        // Auto-update minutes content
         const newMinutes = generateMinutesContent(newBlocks);
         setMinutesContent(newMinutes);
 
-        // Auto-save
         if (!id) {
           throw new Error('Session ID ausente');
         }
@@ -493,25 +506,59 @@ ${encerramento}`;
     }
   };
 
-  const handleGenerateMinutes = async () => {
-    toast.info('Gerando ata com base nos blocos...', { duration: 2000 });
+  const confirmGenerateMinutes = async () => {
+    if (!id) return;
     
-    const generatedMinutes = generateMinutesContent(blocks);
+    setIsMinutesModalOpen(false);
+    setIsGenerating(true);
+    setGenerationStep('Iniciando...');
+    
+    const steps = [
+        "🔍 Analisando estrutura da sessão...",
+        minutesType === 'solene' ? "📚 Buscando contexto legal e histórico..." : null,
+        `✍️ Gerando ata ${minutesType}...`,
+    ].filter(Boolean) as string[];
 
-    setMinutesContent(generatedMinutes);
-    
+    let stepIndex = 0;
+    const interval = setInterval(() => {
+        if (stepIndex < steps.length) {
+            toast.info(steps[stepIndex], { duration: 2000 });
+            setGenerationStep(steps[stepIndex]);
+            stepIndex++;
+        }
+    }, 2500);
+
     try {
-      if (!id) return;
-      const { error } = await supabase
-        .from('sessions')
-        .update({ final_minutes: generatedMinutes })
-        .eq('id', id);
-      if (error) throw error;
-      toast.success('Ata gerada e salva com sucesso!');
-      syncKnowledgeBase();
+        const result = await apiCall('/generate-minutes-mcp', {
+            sessionId: id,
+            minutesType: minutesType
+        });
+
+        clearInterval(interval);
+
+        if (result && result.minutes_text) {
+            setMinutesContent(result.minutes_text);
+            toast.success('✅ Ata gerada com sucesso!');
+            
+            if (result.used_sources && result.used_sources.length > 0) {
+                toast('Fontes utilizadas:', {
+                    description: result.used_sources.join(', '),
+                    duration: 5000,
+                });
+            }
+            
+            syncKnowledgeBase();
+        } else {
+            throw new Error('Falha ao gerar ata (resposta vazia)');
+        }
+
     } catch (error) {
-      console.error('Error saving generated minutes:', error);
-      toast.error('Ata gerada, mas não foi possível salvar automaticamente');
+        clearInterval(interval);
+        console.error('Error generating minutes via MCP:', error);
+        toast.error('Erro ao gerar ata. Tente novamente.');
+    } finally {
+        setIsGenerating(false);
+        setGenerationStep('');
     }
   };
 
@@ -859,10 +906,9 @@ ${encerramento}`;
     }
 
     if (targetBlockId) {
-        // Update existing block
         const updatedBlocks = blocks.map(b => 
             b.id === targetBlockId 
-            ? { ...b, content: text } // Replace content
+            ? { ...b, content: text } 
             : b
         );
         setBlocks(updatedBlocks);
@@ -873,13 +919,11 @@ ${encerramento}`;
             const element = document.getElementById(targetBlockId);
             if (element) {
                 element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                // Add highlight effect
                 element.classList.add('ring-2', 'ring-primary', 'transition-all');
                 setTimeout(() => element.classList.remove('ring-2', 'ring-primary'), 2000);
             }
         }, 100);
     } else {
-        // Create new block
         const newBlock: TranscriptionBlock = {
             id: `block-${Date.now()}`,
             type: 'outros',
@@ -902,10 +946,55 @@ ${encerramento}`;
     }
   };
 
-  // Check for unsummarized blocks
   const hasUnsummarizedBlocks = useMemo(() => {
     return blocks.some(b => !b.summary && b.content.length > 0);
   }, [blocks]);
+
+  // --- Speaker Logic ---
+  const speakersList = useMemo(() => {
+      const speakers = new Set<string>();
+      blocks.forEach(b => {
+          if (b.speaker) speakers.add(b.speaker);
+      });
+      return Array.from(speakers).sort();
+  }, [blocks]);
+
+  const filteredBlocks = useMemo(() => {
+      if (!selectedSpeaker) return [];
+      return blocks.filter(b => b.speaker === selectedSpeaker);
+  }, [blocks, selectedSpeaker]);
+
+  const handleMergeBlocks = () => {
+      if (!selectedSpeaker || filteredBlocks.length < 2) return;
+      
+      const firstBlock = filteredBlocks[0];
+      const mergedContent = filteredBlocks.map(b => b.content).join('\n\n');
+      
+      const newBlock: TranscriptionBlock = {
+          ...firstBlock,
+          content: mergedContent,
+          summary: undefined,
+          title: `Fala Completa de ${selectedSpeaker}`,
+          type: 'discussao'
+      };
+
+      const mergedIds = new Set(filteredBlocks.map(b => b.id));
+      const remainingBlocks = blocks.filter(b => !mergedIds.has(b.id));
+
+      const insertIndex = blocks.findIndex(b => b.id === firstBlock.id);
+      
+      const finalBlocks = [
+          ...remainingBlocks.slice(0, insertIndex),
+          newBlock,
+          ...remainingBlocks.slice(insertIndex)
+      ];
+
+      finalBlocks.forEach((b, i) => b.order = i);
+
+      setBlocks(finalBlocks);
+      setIsMergeModalOpen(false);
+      toast.success(`Blocos de ${selectedSpeaker} mesclados com sucesso!`);
+  };
 
   return (
     <TooltipProvider>
@@ -954,14 +1043,57 @@ ${encerramento}`;
                 <span className="hidden sm:inline">Organizar (IA)</span>
               </Button>
 
-              <Button
-                variant="outline"
-                onClick={handleGenerateMinutes}
-                className="gap-2 bg-background/50 backdrop-blur-sm hover:bg-accent/50 border-purple-500/20 hover:border-purple-500/40 transition-all duration-300"
-              >
-                <Sparkles className="w-4 h-4 text-purple-500" />
-                <span className="hidden sm:inline">Gerar Ata</span>
-              </Button>
+              <Dialog open={isMinutesModalOpen} onOpenChange={setIsMinutesModalOpen}>
+                  <DialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="gap-2 bg-background/50 backdrop-blur-sm hover:bg-accent/50 border-purple-500/20 hover:border-purple-500/40 transition-all duration-300"
+                      >
+                        <Sparkles className="w-4 h-4 text-purple-500" />
+                        <span className="hidden sm:inline">Gerar Ata</span>
+                      </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-[425px]">
+                      <DialogHeader>
+                          <DialogTitle>Gerar Ata com IA</DialogTitle>
+                          <DialogDescription>
+                              Selecione o tipo de sessão para gerar uma ata adequada ao protocolo.
+                          </DialogDescription>
+                      </DialogHeader>
+                      <div className="py-4">
+                          <RadioGroup value={minutesType} onValueChange={(v: any) => setMinutesType(v)}>
+                              <div className="flex items-center space-x-2 border p-3 rounded-lg hover:bg-accent/50 transition-colors cursor-pointer">
+                                  <RadioGroupItem value="ordinaria" id="r1" />
+                                  <Label htmlFor="r1" className="cursor-pointer flex-1">
+                                      <div className="font-semibold">Ordinária</div>
+                                      <div className="text-xs text-muted-foreground">Sessão comum, com expediente e ordem do dia.</div>
+                                  </Label>
+                              </div>
+                              <div className="flex items-center space-x-2 border p-3 rounded-lg hover:bg-accent/50 transition-colors cursor-pointer">
+                                  <RadioGroupItem value="extraordinaria" id="r2" />
+                                  <Label htmlFor="r2" className="cursor-pointer flex-1">
+                                      <div className="font-semibold">Extraordinária</div>
+                                      <div className="text-xs text-muted-foreground">Pauta específica, sem expediente comum.</div>
+                                  </Label>
+                              </div>
+                              <div className="flex items-center space-x-2 border p-3 rounded-lg hover:bg-accent/50 transition-colors cursor-pointer">
+                                  <RadioGroupItem value="solene" id="r3" />
+                                  <Label htmlFor="r3" className="cursor-pointer flex-1">
+                                      <div className="font-semibold">Solene</div>
+                                      <div className="text-xs text-muted-foreground">Homenagens, datas comemorativas, protocolo formal.</div>
+                                  </Label>
+                              </div>
+                          </RadioGroup>
+                      </div>
+                      <DialogFooter>
+                          <Button variant="outline" onClick={() => setIsMinutesModalOpen(false)}>Cancelar</Button>
+                          <Button onClick={confirmGenerateMinutes} className="gap-2">
+                              <Sparkles className="w-4 h-4" />
+                              Gerar Agora
+                          </Button>
+                      </DialogFooter>
+                  </DialogContent>
+              </Dialog>
               
               <Button
                 variant="default"
@@ -1063,6 +1195,10 @@ ${encerramento}`;
                     <Blocks className="w-4 h-4" />
                     Blocos
                   </TabsTrigger>
+                  <TabsTrigger value="speakers" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm transition-all">
+                    <Users className="w-4 h-4" />
+                    Por Orador
+                  </TabsTrigger>
                   <TabsTrigger value="transcript" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm transition-all">
                     <FileText className="w-4 h-4" />
                     Transcrição Completa
@@ -1081,6 +1217,116 @@ ${encerramento}`;
                     processingBlockId={processingBlockId}
                   />
                 </div>
+              </TabsContent>
+
+              <TabsContent value="speakers" className="flex-1 overflow-hidden mt-0 data-[state=active]:animate-in data-[state=active]:fade-in-50 data-[state=active]:slide-in-from-bottom-2 duration-300">
+                  <div className="flex h-full gap-4">
+                      {/* Sidebar List */}
+                      <div className="w-64 bg-card/50 border border-border/40 rounded-lg overflow-hidden flex flex-col">
+                          <div className="p-3 border-b border-border/40 font-medium text-sm text-muted-foreground bg-muted/20">
+                              Oradores Detectados
+                          </div>
+                          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                              {speakersList.length === 0 && (
+                                  <div className="text-xs text-muted-foreground p-4 text-center">Nenhum orador identificado.</div>
+                              )}
+                              {speakersList.map(speaker => (
+                                  <button
+                                      key={speaker}
+                                      onClick={() => setSelectedSpeaker(speaker)}
+                                      className={cn(
+                                          "w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center gap-2",
+                                          selectedSpeaker === speaker 
+                                            ? "bg-primary/10 text-primary font-medium" 
+                                            : "hover:bg-muted/50 text-foreground/80"
+                                      )}
+                                  >
+                                      <div className={cn("w-2 h-2 rounded-full", selectedSpeaker === speaker ? "bg-primary" : "bg-muted-foreground/30")} />
+                                      <span className="truncate">{speaker}</span>
+                                  </button>
+                              ))}
+                          </div>
+                      </div>
+
+                      {/* Main View */}
+                      <div className="flex-1 bg-card/30 border border-border/40 rounded-lg overflow-hidden flex flex-col relative">
+                          {selectedSpeaker ? (
+                              <>
+                                <div className="p-4 border-b border-border/40 bg-muted/20 flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <Users className="w-5 h-5 text-primary" />
+                                        <h3 className="font-semibold text-lg">{selectedSpeaker}</h3>
+                                        <span className="text-xs text-muted-foreground bg-background px-2 py-0.5 rounded-full border border-border/30">
+                                            {filteredBlocks.length} trechos
+                                        </span>
+                                    </div>
+                                    {filteredBlocks.length > 1 && (
+                                        <Dialog open={isMergeModalOpen} onOpenChange={setIsMergeModalOpen}>
+                                            <DialogTrigger asChild>
+                                                <Button variant="outline" size="sm" className="gap-2">
+                                                    <MessageSquare className="w-4 h-4" />
+                                                    Mesclar Trechos em Bloco Único
+                                                </Button>
+                                            </DialogTrigger>
+                                            <DialogContent>
+                                                <DialogHeader>
+                                                    <DialogTitle>Confirmar Mesclagem</DialogTitle>
+                                                    <DialogDescription>
+                                                        Isso irá combinar todos os {filteredBlocks.length} trechos de <strong>{selectedSpeaker}</strong> em um único bloco de "Discussão". 
+                                                        Os blocos originais serão removidos e substituídos pelo novo bloco unificado na posição do primeiro trecho.
+                                                    </DialogDescription>
+                                                </DialogHeader>
+                                                <DialogFooter>
+                                                    <Button variant="outline" onClick={() => setIsMergeModalOpen(false)}>Cancelar</Button>
+                                                    <Button onClick={handleMergeBlocks}>Confirmar e Mesclar</Button>
+                                                </DialogFooter>
+                                            </DialogContent>
+                                        </Dialog>
+                                    )}
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                                    {filteredBlocks.map((block) => (
+                                        <div key={block.id} className="bg-background border border-border/50 rounded-lg p-4 shadow-sm hover:border-primary/20 transition-all">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                                    <Clock className="w-3.5 h-3.5" />
+                                                    <span className="font-mono">{block.timestamp}</span>
+                                                    <span className="w-1 h-1 rounded-full bg-border" />
+                                                    <span className="uppercase tracking-wider font-medium text-[10px]">{block.type}</span>
+                                                </div>
+                                                <Button 
+                                                    variant="ghost" 
+                                                    size="sm" 
+                                                    className="h-6 text-xs gap-1 text-primary hover:text-primary/80 hover:bg-primary/5"
+                                                    onClick={() => {
+                                                        setActiveTab('blocks');
+                                                        setTimeout(() => {
+                                                            const el = document.getElementById(block.id);
+                                                            if (el) {
+                                                                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                                el.classList.add('ring-2', 'ring-primary');
+                                                                setTimeout(() => el.classList.remove('ring-2', 'ring-primary'), 2000);
+                                                            }
+                                                        }, 100);
+                                                    }}
+                                                >
+                                                    Ver no Editor
+                                                    <ArrowLeft className="w-3 h-3 rotate-180" />
+                                                </Button>
+                                            </div>
+                                            <p className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">{block.content}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                              </>
+                          ) : (
+                              <div className="flex flex-col items-center justify-center h-full text-muted-foreground/50 gap-2">
+                                  <Users className="w-12 h-12 opacity-20" />
+                                  <p>Selecione um orador para visualizar suas falas</p>
+                              </div>
+                          )}
+                      </div>
+                  </div>
               </TabsContent>
 
               <TabsContent value="transcript" className="flex-1 overflow-hidden mt-0 data-[state=active]:animate-in data-[state=active]:fade-in-50 data-[state=active]:slide-in-from-bottom-2 duration-300">

@@ -5,6 +5,8 @@ export interface TranscriptionBlock {
   content: string;
   summary?: string;
   timestamp?: string;
+  timestamp_ms?: number;
+  timestamp_estimated?: boolean;
   speaker?: string;
   order: number;
 }
