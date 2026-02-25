@@ -103,7 +103,8 @@ configureR2Cors();
 
 const { initWhatsApp, getWhatsAppStatus, sendWhatsAppMessage, logoutWhatsApp } = require('./ouvidoriaWhatsApp');
 
-// Load env vars from parent directory
+// Load env vars from backend/.env then root .env (backend overrides root)
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 // Debug logging for deployment

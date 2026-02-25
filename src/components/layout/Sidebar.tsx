@@ -44,6 +44,7 @@ type CamaraFeatures = {
   upload?: boolean;
   adminUsers?: boolean;
   adminVereadores?: boolean;
+  ouvidoria?: boolean;
 };
 
 type CamaraConfiguration = {
@@ -136,7 +137,7 @@ export function Sidebar() {
     ...(isAdmin && isFeatureEnabled('adminVereadores')
       ? [{ icon: Users, label: 'Vereadores', path: '/admin/vereadores' }]
       : []),
-    ...(isAdmin
+    ...(isAdmin && isFeatureEnabled('ouvidoria')
       ? [{ icon: MessageCircle, label: 'Ouvidoria', path: '/admin/ouvidoria' }]
       : []),
   ];

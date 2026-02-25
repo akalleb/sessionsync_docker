@@ -25,6 +25,7 @@ type CamaraFeatures = {
   upload: boolean;
   adminUsers: boolean;
   adminVereadores: boolean;
+  ouvidoria: boolean;
 };
 
 type CamaraConfiguration = {
@@ -39,6 +40,7 @@ const defaultFeatures: CamaraFeatures = {
   upload: true,
   adminUsers: true,
   adminVereadores: true,
+   ouvidoria: true,
 };
 
 const Camaras = () => {
@@ -429,6 +431,13 @@ const Camaras = () => {
                         <Switch
                           checked={formData.features.adminVereadores}
                           onCheckedChange={(checked) => handleFeatureChange('adminVereadores', checked)}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm">Ouvidoria</span>
+                        <Switch
+                          checked={formData.features.ouvidoria}
+                          onCheckedChange={(checked) => handleFeatureChange('ouvidoria', checked)}
                         />
                       </div>
                     </div>
