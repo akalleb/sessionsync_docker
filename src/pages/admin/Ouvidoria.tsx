@@ -10,7 +10,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { apiCall } from '@/lib/utils';
-import { MessageCircle, QrCode, Search, Send, User, Bot, Clock, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/use-auth';
+import { MessageCircle, QrCode, Search, Send, User, Bot, Clock, CheckCircle2, AlertCircle, RefreshCw, PowerOff } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -19,15 +21,18 @@ interface Ticket {
   whatsapp_number: string;
   nome: string | null;
   assunto: string | null;
-  status: 'novo' | 'em_atendimento' | 'concluido';
+  status: 'novo' | 'em_atendimento' | 'triagem' | 'coleta' | 'concluido';
   handled_by: 'ia' | 'humano';
   last_message_at: string;
+  protocolo?: string;
+  tipo_manifestacao?: string;
+  resumo_ia?: string;
   unread_count?: number;
 }
 
 interface Message {
   id: string;
-  from_type: 'cidadao' | 'ia' | 'humano';
+  from_type: 'cidadao' | 'ia' | 'humano' | 'admin';
   body: string;
   created_at: string;
 }
@@ -40,6 +45,7 @@ interface WhatsAppStatus {
 
 export default function Ouvidoria() {
   const { toast } = useToast();
+  const { profile } = useAuth();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -50,75 +56,118 @@ export default function Ouvidoria() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isStarting, setIsStarting] = useState(false);
 
+  // API baseURL for the isolated worker
+  const WORKER_API_URL = 'http://localhost:3005/api/whatsapp';
+
   // 1. Carregar status do WhatsApp
   const fetchWaStatus = async () => {
+    if (!profile?.camara_id) return;
     try {
-      const resp = await apiCall('/ouvidoria/whatsapp/qr', undefined, 'GET');
+      const response = await fetch(`${WORKER_API_URL}/status?camara_id=${profile.camara_id}`);
+      const resp = await response.json();
+
       if (resp) {
         setWaStatus(resp);
-        // Se receber QR code ou estiver pronto, parar o spinner
         if (resp.qr || resp.ready) {
-            setIsStarting(false);
+          setIsStarting(false);
         }
       }
     } catch (error) {
-      console.error('Erro ao buscar status WA:', error);
+      console.error('Erro ao buscar status WA do Worker:', error);
     }
   };
 
   const startWhatsApp = async () => {
+    if (!profile?.camara_id) return;
+
     setIsStarting(true);
     try {
-      await apiCall('/ouvidoria/whatsapp/start', {}, 'POST');
+      await fetch(`${WORKER_API_URL}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ camara_id: profile.camara_id })
+      });
+
       toast({
         title: 'Iniciando conexão...',
         description: 'Isso pode levar alguns minutos na primeira vez enquanto baixamos os recursos.'
       });
-      
+
       // Retry logic for QR code
       let attempts = 0;
       const checkInterval = setInterval(async () => {
-          attempts++;
-          try {
-              const resp = await apiCall('/ouvidoria/whatsapp/qr', undefined, 'GET');
-              if (resp && (resp.qr || resp.ready)) {
-                  setWaStatus(resp);
-                  setIsStarting(false);
-                  clearInterval(checkInterval);
-              }
-          } catch (e) { console.error(e); }
-          
-          if (attempts > 90) { // Timeout after 180s (90 * 2s)
-              clearInterval(checkInterval);
-              setIsStarting(false);
-              if (!waStatus.ready && !waStatus.qr) {
-                  toast({
-                      variant: 'destructive',
-                      title: 'Tempo excedido',
-                      description: 'Não foi possível gerar o QR Code a tempo. Tente novamente.'
-                  });
-              }
+        attempts++;
+        try {
+          const response = await fetch(`${WORKER_API_URL}/status?camara_id=${profile.camara_id}`);
+          const resp = await response.json();
+
+          if (resp && (resp.qr || resp.ready)) {
+            setWaStatus(resp);
+            setIsStarting(false);
+            clearInterval(checkInterval);
           }
+        } catch (e) { console.error(e); }
+
+        if (attempts > 30) { // Timeout after 60s
+          clearInterval(checkInterval);
+          setIsStarting(false);
+          if (!waStatus.ready && !waStatus.qr) {
+            toast({
+              variant: 'destructive',
+              title: 'Tempo excedido',
+              description: 'Não foi possível gerar o QR Code a tempo. Tente novamente.'
+            });
+          }
+        }
       }, 2000);
 
     } catch (error) {
       toast({
         variant: 'destructive',
         title: 'Erro ao iniciar',
-        description: 'Não foi possível iniciar o cliente WhatsApp.'
+        description: 'Não foi possível se comunicar com o motor WhatsApp.'
       });
       setIsStarting(false);
     }
   };
 
-  // 2. Carregar tickets
+  const logoutWhatsApp = async () => {
+    if (!profile?.camara_id) return;
+    try {
+      await fetch(`${WORKER_API_URL}/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ camara_id: profile.camara_id })
+      });
+      setWaStatus({ ready: false, hasQr: false, qr: null });
+      toast({ title: 'Desconectado com sucesso' });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    fetchWaStatus();
+  }, [profile?.camara_id]);
+
+  // 2. Carregar tickets via Worker (Bypass RLS local)
   const fetchTickets = async () => {
     try {
-      const resp = await apiCall('/ouvidoria/tickets', undefined, 'GET');
-      if (resp && resp.tickets) {
-        setTickets(resp.tickets);
+      if (!profile?.camara_id) return;
+
+      const response = await fetch(`${WORKER_API_URL}/tickets?camara_id=${profile.camara_id}`);
+      const result = await response.json();
+
+      if (result.success && result.data) {
+        // Mapeia para o formato correto
+        const mapped = result.data.map((d: any) => ({
+          ...d,
+          last_message_at: d.updated_at
+        }));
+        setTickets(mapped as Ticket[]);
       }
     } catch (error) {
+      console.error('Error fetching tickets via API', error);
       toast({
         variant: 'destructive',
         title: 'Erro ao carregar atendimentos',
@@ -129,12 +178,14 @@ export default function Ouvidoria() {
     }
   };
 
-  // 3. Carregar mensagens de um ticket
+  // 3. Carregar mensagens de um ticket via Worker (Bypass RLS local)
   const fetchMessages = async (ticketId: string) => {
     try {
-      const resp = await apiCall(`/ouvidoria/tickets/${ticketId}`, undefined, 'GET');
-      if (resp && resp.messages) {
-        setMessages(resp.messages);
+      const response = await fetch(`${WORKER_API_URL}/messages?ticket_id=${ticketId}`);
+      const result = await response.json();
+
+      if (result.success && result.data) {
+        setMessages(result.data as Message[]);
       }
     } catch (error) {
       console.error('Erro ao buscar mensagens:', error);
@@ -147,7 +198,7 @@ export default function Ouvidoria() {
 
     const tempMsg: Message = {
       id: 'temp-' + Date.now(),
-      from_type: 'humano',
+      from_type: 'admin', // Mudado de humano para admin para refletir o schema
       body: newMessage,
       created_at: new Date().toISOString()
     };
@@ -156,17 +207,29 @@ export default function Ouvidoria() {
     setNewMessage('');
 
     try {
-      const resp = await apiCall(`/ouvidoria/tickets/${selectedTicket.id}/reply`, {
-        message: tempMsg.body
-      });
+      const { error } = await supabase
+        .from('ouvidoria_messages')
+        .insert({
+          ticket_id: selectedTicket.id,
+          from_type: 'admin',
+          direction: 'outbound',
+          body: tempMsg.body
+        });
 
-      if (resp && resp.success) {
-        // Recarrega para pegar ID real
-        fetchMessages(selectedTicket.id);
-      } else {
-        throw new Error('Falha no envio');
-      }
+      if (error) throw error;
+
+      // Atualiza o ticket para refletir que um humano tocou nele (opcional depende da regra, por hora só atualiza data)
+      await supabase
+        .from('ouvidoria_tickets')
+        .update({
+          updated_at: new Date().toISOString(),
+          status: 'em_atendimento',
+          ia_session_active: false // Pausa a IA quando o admin responde
+        })
+        .eq('id', selectedTicket.id);
+
     } catch (error) {
+      console.error("Erro", error);
       toast({
         variant: 'destructive',
         title: 'Erro ao enviar',
@@ -178,7 +241,7 @@ export default function Ouvidoria() {
   useEffect(() => {
     fetchWaStatus();
     fetchTickets();
-    
+
     // Polling simples para status e tickets (ideal seria realtime)
     const interval = setInterval(() => {
       fetchWaStatus();
@@ -191,15 +254,46 @@ export default function Ouvidoria() {
   useEffect(() => {
     if (selectedTicket) {
       fetchMessages(selectedTicket.id);
-      // Polling de mensagens
-      const msgInterval = setInterval(() => {
-        fetchMessages(selectedTicket.id);
-      }, 5000);
-      return () => clearInterval(msgInterval);
+
+      // Supabase Real-time messages for this ticket
+      const channel = supabase
+        .channel(`messages-${selectedTicket.id}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'ouvidoria_messages', filter: `ticket_id=eq.${selectedTicket.id}` },
+          () => {
+            fetchMessages(selectedTicket.id);
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
   }, [selectedTicket]);
 
-  const filteredTickets = tickets.filter(t => 
+  // Real-time listener for new tickets overall
+  useEffect(() => {
+    if (!profile?.camara_id) return;
+
+    const ticketChannel = supabase
+      .channel('public:ouvidoria_tickets')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ouvidoria_tickets', filter: `camara_id=eq.${profile.camara_id}` },
+        () => {
+          fetchTickets();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(ticketChannel);
+    };
+  }, [profile?.camara_id]);
+
+  const filteredTickets = tickets.filter(t =>
     (t.nome && t.nome.toLowerCase().includes(searchTerm.toLowerCase())) ||
     t.whatsapp_number.includes(searchTerm)
   );
@@ -218,19 +312,19 @@ export default function Ouvidoria() {
             </p>
           </div>
           <div className="flex gap-2">
-             <Button 
-               variant={view === 'chat' ? 'default' : 'outline'}
-               onClick={() => setView('chat')}
-             >
-               Atendimentos
-             </Button>
-             <Button 
-               variant={view === 'settings' ? 'default' : 'outline'}
-               onClick={() => setView('settings')}
-             >
-               <QrCode className="w-4 h-4 mr-2" />
-               Conexão WhatsApp
-             </Button>
+            <Button
+              variant={view === 'chat' ? 'default' : 'outline'}
+              onClick={() => setView('chat')}
+            >
+              Atendimentos
+            </Button>
+            <Button
+              variant={view === 'settings' ? 'default' : 'outline'}
+              onClick={() => setView('settings')}
+            >
+              <QrCode className="w-4 h-4 mr-2" />
+              Conexão WhatsApp
+            </Button>
           </div>
         </div>
 
@@ -239,7 +333,7 @@ export default function Ouvidoria() {
             <CardHeader>
               <CardTitle>Conexão com WhatsApp</CardTitle>
               <CardDescription>
-                Escaneie o QR Code com o celular da Câmara para ativar a Ouvidoria.
+                Escaneie o QR Code com o celular de atendimento da sua Câmara para ativar a Ouvidoria.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col items-center gap-6 py-8">
@@ -250,46 +344,48 @@ export default function Ouvidoria() {
                   </div>
                   <h3 className="text-xl font-semibold">WhatsApp Conectado!</h3>
                   <p className="text-muted-foreground text-center">
-                    O sistema está pronto para receber e responder mensagens.
+                    O sistema está pronto para receber e responder mensagens da sua Câmara.
                   </p>
-                  <Button variant="outline" onClick={() => apiCall('/ouvidoria/whatsapp/logout')}>
-                    Desconectar
+                  <Button variant="outline" onClick={logoutWhatsApp}>
+                    Desconectar Aparelho
                   </Button>
                 </div>
               ) : (
                 <div className="flex flex-col items-center gap-4">
                   {waStatus.qr ? (
-                    <div className="p-4 bg-white rounded-lg shadow-sm border">
-                      <img src={waStatus.qr} alt="QR Code WhatsApp" className="w-64 h-64" />
+                    <div className="flex flex-col items-center gap-4">
+                      <div className="p-4 bg-white rounded-lg shadow-sm border">
+                        <img src={waStatus.qr} alt="QR Code WhatsApp" className="w-64 h-64" />
+                      </div>
+                      <p className="text-sm text-muted-foreground text-center max-w-sm mt-2">
+                        Abra o WhatsApp no celular Oficial da Câmara, vá em "Aparelhos Conectados" e escaneie este código.
+                      </p>
                     </div>
                   ) : (
                     <div className="flex flex-col items-center gap-4">
-                        <div className="w-64 h-64 bg-muted/30 flex items-center justify-center rounded-lg border-2 border-dashed">
-                          <div className="flex flex-col items-center text-muted-foreground">
-                            {isStarting ? (
-                                <>
-                                    <RefreshCw className="w-8 h-8 animate-spin mb-2" />
-                                    <span>Iniciando sessão...</span>
-                                </>
-                            ) : (
-                                <>
-                                    <QrCode className="w-8 h-8 mb-2 opacity-50" />
-                                    <span>Aguardando conexão</span>
-                                </>
-                            )}
-                          </div>
+                      <div className="w-64 h-64 bg-muted/30 flex items-center justify-center rounded-lg border-2 border-dashed">
+                        <div className="flex flex-col items-center text-muted-foreground">
+                          {isStarting ? (
+                            <>
+                              <RefreshCw className="w-8 h-8 animate-spin mb-2" />
+                              <span>Iniciando motor da Câmara...</span>
+                            </>
+                          ) : (
+                            <>
+                              <QrCode className="w-8 h-8 mb-2 opacity-50" />
+                              <span>Sessão Offline</span>
+                            </>
+                          )}
                         </div>
-                        
-                        {!isStarting && (
-                            <Button onClick={startWhatsApp} className="w-full max-w-xs">
-                                Conectar Dispositivo
-                            </Button>
-                        )}
+                      </div>
+
+                      {!isStarting && (
+                        <Button onClick={startWhatsApp} className="w-full max-w-xs">
+                          Gerar QR Code de Conexão
+                        </Button>
+                      )}
                     </div>
                   )}
-                  <p className="text-sm text-muted-foreground max-w-sm text-center">
-                    Clique em "Conectar Dispositivo" e escaneie o QR Code com o celular da Câmara.
-                  </p>
                 </div>
               )}
             </CardContent>
@@ -301,8 +397,8 @@ export default function Ouvidoria() {
               <div className="p-4 border-b">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input 
-                    placeholder="Buscar conversa..." 
+                  <Input
+                    placeholder="Buscar conversa..."
                     className="pl-9"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -315,15 +411,15 @@ export default function Ouvidoria() {
                     <div className="p-4 text-center text-muted-foreground">Carregando...</div>
                   ) : filteredTickets.length === 0 ? (
                     <div className="p-8 text-center text-muted-foreground flex flex-col items-center">
-                       <MessageCircle className="w-10 h-10 mb-2 opacity-20" />
-                       <p>Nenhum atendimento encontrado.</p>
+                      <MessageCircle className="w-10 h-10 mb-2 opacity-20" />
+                      <p>Nenhum atendimento encontrado.</p>
                     </div>
                   ) : (
                     filteredTickets.map(ticket => (
                       <button
                         key={ticket.id}
                         onClick={() => setSelectedTicket(ticket)}
-                        className={`w-full text-left p-4 hover:bg-muted/50 transition-colors flex gap-3 ${selectedTicket?.id === ticket.id ? 'bg-muted' : ''}`}
+                        className={`w-full text-left p-4 hover:bg-muted/50 transition-colors flex gap-3 border-b border-muted/30 ${selectedTicket?.id === ticket.id ? 'bg-muted/80 border-l-4 border-l-primary' : ''}`}
                       >
                         <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0">
                           {ticket.nome ? ticket.nome.charAt(0).toUpperCase() : <User className="w-5 h-5" />}
@@ -337,19 +433,40 @@ export default function Ouvidoria() {
                               {format(new Date(ticket.last_message_at), 'HH:mm', { locale: ptBR })}
                             </span>
                           </div>
-                          <p className="text-sm text-muted-foreground truncate">
-                            {ticket.assunto || 'Novo contato'}
-                          </p>
-                          <div className="flex items-center gap-2 mt-2">
-                            <Badge variant={ticket.status === 'novo' ? 'default' : 'secondary'} className="text-[10px] h-5">
-                              {ticket.status}
+
+                          <div className="flex justify-between items-center mb-1">
+                            <p className="text-xs font-mono text-muted-foreground">
+                              {ticket.protocolo}
+                            </p>
+                            <span className="text-xs font-medium text-muted-foreground">
+                              {ticket.assunto || 'Atendimento Inicial'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2 mt-2 flex-wrap">
+                            <Badge variant={ticket.status === 'novo' ? 'default' : ticket.status === 'concluido' ? 'outline' : 'secondary'} className="text-[10px] h-5">
+                              {ticket.status === 'novo' ? 'Aguardando' : (ticket.status as string) === 'em_atendimento' || (ticket.status as string) === 'triagem' || (ticket.status as string) === 'coleta' ? 'Em Andamento' : 'Concluído'}
                             </Badge>
+                            {ticket.tipo_manifestacao && (
+                              <Badge variant="outline" className="text-[10px] h-5 border-purple-200 text-purple-600 bg-purple-50">
+                                {ticket.tipo_manifestacao}
+                              </Badge>
+                            )}
                             {ticket.handled_by === 'ia' && (
                               <Badge variant="outline" className="text-[10px] h-5 border-blue-200 text-blue-600 bg-blue-50">
                                 <Bot className="w-3 h-3 mr-1" /> IA
                               </Badge>
                             )}
                           </div>
+
+                          {ticket.resumo_ia && (
+                            <div className="mt-3 bg-muted/30 p-2 rounded-md border text-xs">
+                              <span className="font-semibold text-primary/80 mb-1 block">Resumo IA:</span>
+                              <p className="text-muted-foreground leading-relaxed line-clamp-3">
+                                {ticket.resumo_ia}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       </button>
                     ))
@@ -372,18 +489,57 @@ export default function Ouvidoria() {
                           {selectedTicket.nome || selectedTicket.whatsapp_number}
                         </CardTitle>
                         <CardDescription className="text-xs flex items-center gap-1">
-                           <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
-                           WhatsApp • {selectedTicket.whatsapp_number}
+                          <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
+                          WhatsApp • {selectedTicket.whatsapp_number}
                         </CardDescription>
                       </div>
                     </div>
                     <div className="flex gap-2">
-                       {/* Ações do ticket aqui (Encerrar, Assumir, etc) */}
-                       <Button variant="outline" size="sm">
-                         Encerrar Atendimento
-                       </Button>
+                      {selectedTicket.protocolo && (
+                        <Badge variant="secondary" className="font-mono text-xs">
+                          {selectedTicket.protocolo}
+                        </Badge>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          await supabase.from('ouvidoria_tickets').update({ status: 'concluido' }).eq('id', selectedTicket.id);
+                          setSelectedTicket(null);
+                          toast({ title: 'Atendimento encerrado' });
+                        }}
+                      >
+                        Encerrar
+                      </Button>
                     </div>
                   </CardHeader>
+
+                  {/* Banner de Informações da Ouvidoria */}
+                  <div className="px-4 py-3 bg-muted/40 border-b flex flex-col gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant={selectedTicket.status === 'novo' ? 'default' : selectedTicket.status === 'concluido' ? 'outline' : 'secondary'} className="text-xs">
+                        {selectedTicket.status === 'novo' ? 'Aguardando' : selectedTicket.status === 'concluido' ? 'Concluído' : 'Em Andamento'}
+                      </Badge>
+                      {selectedTicket.tipo_manifestacao && (
+                        <Badge variant="outline" className="text-xs border-purple-200 text-purple-700 bg-purple-50">
+                          {selectedTicket.tipo_manifestacao}
+                        </Badge>
+                      )}
+                      {selectedTicket.handled_by === 'ia' && (
+                        <Badge variant="outline" className="text-xs border-blue-200 text-blue-700 bg-blue-50">
+                          <Bot className="w-3 h-3 mr-1" /> Inteligência Artificial
+                        </Badge>
+                      )}
+                    </div>
+                    {selectedTicket.resumo_ia && (
+                      <div className="mt-1 flex flex-col gap-1">
+                        <span className="text-xs font-semibold text-primary/80 uppercase tracking-wider">Resumo Gerado Pela IA</span>
+                        <p className="text-sm bg-white p-3 rounded-md border text-slate-700 shadow-sm">
+                          {selectedTicket.resumo_ia}
+                        </p>
+                      </div>
+                    )}
+                  </div>
 
                   <ScrollArea className="flex-1 p-4 bg-muted/20">
                     <div className="flex flex-col gap-4">
@@ -391,11 +547,11 @@ export default function Ouvidoria() {
                         const isMe = msg.from_type !== 'cidadao';
                         return (
                           <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                            <div 
+                            <div
                               className={`
                                 max-w-[80%] rounded-2xl px-4 py-2 text-sm shadow-sm
-                                ${isMe 
-                                  ? 'bg-primary text-primary-foreground rounded-br-none' 
+                                ${isMe
+                                  ? 'bg-primary text-primary-foreground rounded-br-none'
                                   : 'bg-white border rounded-bl-none'
                                 }
                               `}
@@ -418,7 +574,7 @@ export default function Ouvidoria() {
 
                   <div className="p-4 border-t bg-background">
                     <div className="flex gap-2">
-                      <Textarea 
+                      <Textarea
                         value={newMessage}
                         onChange={(e) => setNewMessage(e.target.value)}
                         placeholder="Digite sua resposta..."
@@ -430,8 +586,8 @@ export default function Ouvidoria() {
                           }
                         }}
                       />
-                      <Button 
-                        onClick={handleSendMessage} 
+                      <Button
+                        onClick={handleSendMessage}
                         disabled={!newMessage.trim()}
                         className="h-auto w-14"
                       >

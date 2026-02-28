@@ -26,6 +26,7 @@ import SessaoControl from "./pages/sessao/SessaoControl";
 import SessaoVereador from "./pages/sessao/SessaoVereador";
 import PlenarioDisplay from "./pages/sessao/PlenarioDisplay";
 import Ouvidoria from "./pages/admin/Ouvidoria";
+import OuvidoriaSettings from "./pages/admin/OuvidoriaSettings";
 
 const queryClient = new QueryClient();
 
@@ -111,6 +112,11 @@ const App = () => (
             <Route path="/admin/ouvidoria" element={
               <ProtectedRoute requiredRole="admin">
                 <Ouvidoria />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/ouvidoria/settings" element={
+              <ProtectedRoute requiredRole="admin">
+                <OuvidoriaSettings />
               </ProtectedRoute>
             } />
             <Route path="/admin/dashboard" element={

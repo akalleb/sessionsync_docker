@@ -1,0 +1,448 @@
+require('dotenv').config({ path: '../../.env' });
+require('dotenv').config({ path: '../../../.env' });
+const { createClient } = require('@supabase/supabase-js');
+const wppconnect = require('@wppconnect-team/wppconnect');
+const OpenAI = require('openai');
+const path = require('path');
+const express = require('express');
+const cors = require('cors');
+
+console.log("=========================================");
+console.log("Iniciando Worker Multi-Tenant da Ouvidoria");
+console.log("=========================================");
+
+// --- Setup ---
+const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+if (!supabaseUrl || !supabaseKey) {
+    console.error("FATAL: Variáveis do Supabase não encontradas.");
+    process.exit(1);
+}
+const supabase = createClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false, autoRefreshToken: false }
+});
+
+const openaiKey = process.env.OPENAI_API_KEY;
+if (!openaiKey) {
+    console.error("FATAL: OPENAI_API_KEY não encontrada.");
+    process.exit(1);
+}
+const openai = new OpenAI({ apiKey: openaiKey });
+
+// --- Estado Multi-Tenant ---
+// Dicionário de sessões ativas: camaraId -> WPPClient
+const activeClients = new Map();
+// Cache temporário para o QR Code (camaraId -> { qr: string, timestamp: number })
+const qrCodes = new Map();
+
+// ==========================================
+// SERVIDOR EXPRESS PARA API DO DASHBOARD
+// ==========================================
+const app = express();
+app.use(cors());
+app.use(express.json());
+const PORT = 3005; // Porta isolada para este worker
+
+// 1. Iniciar ou recuperar conexão do WhatsApp de uma Câmara
+app.post('/api/whatsapp/start', async (req, res) => {
+    const { camara_id } = req.body;
+    if (!camara_id) return res.status(400).json({ error: "camara_id obrigatório" });
+
+    // Se já existe e está pronto
+    if (activeClients.has(camara_id)) {
+        return res.json({ status: "already_connected" });
+    }
+
+    try {
+        console.log(`[API] Iniciando WPPConnect para camara: ${camara_id}`);
+        // Limpa QR antigo se tiver
+        qrCodes.delete(camara_id);
+
+        // Chamada assíncrona para iniciar, não bloqueamos o res.json
+        startWhatsAppForCamara(camara_id);
+        res.json({ status: "starting" });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 2. Chamar QR Code ou Status de uma Câmara
+app.get('/api/whatsapp/status', (req, res) => {
+    const { camara_id } = req.query;
+    if (!camara_id) return res.status(400).json({ error: "camara_id obrigatório" });
+
+    const client = activeClients.get(camara_id);
+    const qrData = qrCodes.get(camara_id);
+
+    if (client) {
+        return res.json({ ready: true, hasQr: false, qr: null });
+    } else if (qrData) {
+        return res.json({ ready: false, hasQr: true, qr: qrData.qr });
+    } else {
+        return res.json({ ready: false, hasQr: false, qr: null });
+    }
+});
+
+// 3. Desconectar Câmara
+app.post('/api/whatsapp/logout', async (req, res) => {
+    const { camara_id } = req.body;
+    if (!camara_id) return res.status(400).json({ error: "camara_id obrigatório" });
+
+    const client = activeClients.get(camara_id);
+    if (client) {
+        try {
+            await client.logout();
+            await client.close();
+        } catch (e) { console.error('Error logging out', e); }
+        activeClients.delete(camara_id);
+        qrCodes.delete(camara_id);
+        res.json({ success: true });
+    } else {
+        res.json({ success: false, message: "not_connected" });
+    }
+});
+
+// 4. Buscar Tickets (Bypass RLS)
+app.get('/api/whatsapp/tickets', async (req, res) => {
+    const { camara_id } = req.query;
+    if (!camara_id) return res.status(400).json({ error: "camara_id obrigatório" });
+
+    try {
+        const { data, error } = await supabase
+            .from('ouvidoria_tickets')
+            .select('*')
+            .eq('camara_id', camara_id)
+            .order('updated_at', { ascending: false });
+
+        if (error) throw error;
+        res.json({ success: true, data });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 5. Buscar Mensagens (Bypass RLS)
+app.get('/api/whatsapp/messages', async (req, res) => {
+    const { ticket_id } = req.query;
+    if (!ticket_id) return res.status(400).json({ error: "ticket_id obrigatório" });
+
+    try {
+        const { data, error } = await supabase
+            .from('ouvidoria_messages')
+            .select('*')
+            .eq('ticket_id', ticket_id)
+            .order('created_at', { ascending: true });
+
+        if (error) throw error;
+        res.json({ success: true, data });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.listen(PORT, () => console.log(`Ouvidoria Worker API rodando na porta ${PORT}`));
+
+// ==========================================
+// FUNÇÕES CORE DO WPPCONNECT
+// ==========================================
+async function startWhatsAppForCamara(camaraId) {
+    try {
+        const client = await wppconnect.create({
+            session: `camara_${camaraId}`,
+            catchQR: (base64Qr, asciiQR) => {
+                console.log(`[!] NOVO QR CODE GERADO PARA CAMARA ${camaraId}. Leia no Painel Admin.`);
+                qrCodes.set(camaraId, { qr: base64Qr, timestamp: Date.now() });
+            },
+            statusFind: (statusSession, session) => {
+                console.log(`[${camaraId}] Status Session:`, statusSession);
+                if (statusSession === 'isLogged' || statusSession === 'inChat') {
+                    activeClients.set(camaraId, client);
+                    qrCodes.delete(camaraId);
+                }
+            },
+            headless: true,
+            devtools: false,
+            useChrome: true,
+            debug: false,
+            logQR: false,
+            disableWelcome: true,
+            autoClose: 0,
+            puppeteerOptions: {
+                userDataDir: path.join(__dirname, 'auth_info', `camara_${camaraId}`),
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu'
+                ]
+            }
+        });
+
+        console.log(`[${camaraId}] WhatsApp Client conectado!`);
+        activeClients.set(camaraId, client);
+        startMessageListener(client, camaraId);
+
+    } catch (error) {
+        console.error(`[${camaraId}] WPPConnect Create Error:`, error);
+        qrCodes.delete(camaraId);
+        activeClients.delete(camaraId);
+    }
+}
+
+// Ouvinte Modificado para fluxo State Machine Determinístico (sem loop de IA)
+function startMessageListener(client, camaraId) {
+    client.onMessage(async (message) => {
+        if (message.isGroupMsg) return;
+        if (message.from === 'status@broadcast') return;
+        if (message.from.includes('@broadcast')) return; // ignorar mensagens de status/story
+
+        try {
+            const phone = message.from.replace('@c.us', '');
+            const body = message.body || (message.type === 'ptt' ? '[Áudio recebido]' : '[Mídia recebida]');
+            const senderName = message.notifyName || phone;
+
+            console.log(`[${camaraId}] Nova mensagem de ${phone}: ${body.substring(0, 30)}...`);
+
+            // 1. Procurar Ticket Ativo (que não esteja fechado) pegando sempre o mais recente
+            let { data: ticketsInfo, error: fetchErr } = await supabase
+                .from('ouvidoria_tickets')
+                .select('*')
+                .eq('camara_id', camaraId)
+                .eq('whatsapp_number', phone)
+                .neq('status', 'fechado')
+                .order('created_at', { ascending: false })
+                .limit(1);
+
+            if (fetchErr) {
+                console.error("Erro buscando ticket:", fetchErr);
+            }
+
+            let ticket = ticketsInfo && ticketsInfo.length > 0 ? ticketsInfo[0] : null;
+            let ticketId;
+            let isNewTicket = false;
+
+            // Se não tem ticket ativo, CRIAR NOVO no status 'triagem'
+            if (!ticket) {
+                console.log(`[${camaraId}] Criando novo ticket para ${phone}`);
+                const { data: newTicket, error: createErr } = await supabase
+                    .from('ouvidoria_tickets')
+                    .insert({
+                        camara_id: camaraId,
+                        whatsapp_number: phone,
+                        nome: senderName,
+                        assunto: 'Atendimento Inicial',
+                        status: 'triagem', // <--- STATE MACHINE: PASSO 1
+                        handled_by: 'ia',
+                        ia_session_active: true
+                    })
+                    .select()
+                    .single();
+
+                if (createErr) throw createErr;
+                ticket = newTicket;
+                ticketId = ticket.id;
+                isNewTicket = true;
+
+                // Enviar Saudação Oficial e Menu
+                const greeting = `Olá, ${senderName}! A Ouvidoria da Câmara Municipal recebeu sua manifestação.\nPara garantir o acompanhamento, geramos o Protocolo nº *${ticket.protocolo}*.\n\nDe acordo com a Lei de Acesso à Informação (Lei nº 12.527/11) e a Lei de Defesa do Usuário do Serviço Público (Lei nº 13.460/17), nossa equipe analisará seu pedido e retornará em até 20 dias (prorrogáveis por mais 10, se necessário).\n\nPor favor, digite o *NÚMERO* da opção que melhor descreve sua manifestação:\n1 - Sugestão\n2 - Reclamação\n3 - Elogio\n4 - Denúncia\n5 - Solicitação`;
+                await client.sendText(message.from, greeting);
+
+                // Salvar outbound da saudação
+                await supabase.from('ouvidoria_messages').insert([{
+                    ticket_id: ticketId,
+                    from_type: 'ia',
+                    direction: 'outbound',
+                    body: greeting
+                }]);
+            } else {
+                ticketId = ticket.id;
+            }
+
+            // 2. Salvar Sempre a Mensagem do Cidadão no Histórico
+            await supabase.from('ouvidoria_messages').insert({
+                ticket_id: ticketId,
+                from_type: 'cidadao',
+                direction: 'inbound',
+                body: body
+            });
+
+            // Se acabou de ser criado, não avalia a mensagem inicial como opção de menu
+            if (isNewTicket) return;
+
+            // 3. Executar Lógica de State Machine APENAS se estiver com a IA
+            const normalizedStatus = ticket.status === 'em_atendimento' ? 'triagem' : ticket.status;
+            console.log(`[${camaraId}] Avaliando State Machine para Ticket ${ticketId}. Status Real: ${ticket.status}, Normalizado: ${normalizedStatus}, IA Ativa: ${ticket.ia_session_active}`);
+
+            if (ticket.ia_session_active || normalizedStatus === 'triagem' || normalizedStatus === 'coleta') {
+
+                if (normalizedStatus === 'triagem') {
+                    const choice = body.trim();
+                    const menuMap = {
+                        '1': 'Sugestão',
+                        '2': 'Reclamação',
+                        '3': 'Elogio',
+                        '4': 'Denúncia',
+                        '5': 'Solicitação'
+                    };
+
+                    console.log(`[${camaraId}] Usuário escolheu a opção: '${choice}'`);
+
+                    if (menuMap[choice]) {
+                        const tipoEscolhido = menuMap[choice];
+
+                        // Avança o estado para COLETA DE DADOS
+                        await supabase.from('ouvidoria_tickets').update({
+                            tipo_manifestacao: tipoEscolhido,
+                            status: 'coleta'
+                        }).eq('id', ticketId);
+
+                        const msgColeta = `Você selecionou *${tipoEscolhido}*.\n\nPor favor, descreva em detalhes sua manifestação (o que ocorreu, local, data, envolvidos). Você pode enviar mensagens de texto (quantas quiser), ou até mesmo áudios, fotos ou vídeos.\n\nQuando finalizar de enviar TODOS os detalhes, digite a palavra *ENCERRAR* para que sua manifestação seja protocolada e enviada para análise.`;
+                        await client.sendText(message.from, msgColeta);
+
+                        await supabase.from('ouvidoria_messages').insert([{
+                            ticket_id: ticketId, from_type: 'ia', direction: 'outbound', body: msgColeta
+                        }]);
+                    } else {
+                        // Resposta Inválida
+                        const msgErro = `Opção inválida.\nPor favor, digite apenas o *NÚMERO* correspondente:\n1 - Sugestão\n2 - Reclamação\n3 - Elogio\n4 - Denúncia\n5 - Solicitação`;
+                        await client.sendText(message.from, msgErro);
+
+                        await supabase.from('ouvidoria_messages').insert([{
+                            ticket_id: ticketId, from_type: 'ia', direction: 'outbound', body: msgErro
+                        }]);
+                    }
+                }
+                else if (normalizedStatus === 'coleta') {
+                    if (body.trim().toUpperCase() === 'ENCERRAR') {
+                        // Encerra a Sessão da IA e passa a bola pro Humano
+                        const msgFim = `Sua manifestação foi recebida e registrada com sucesso! Ela foi encaminhada ao setor responsável para o processamento interno.\n\nVocê será notificado por este mesmo canal quando houver uma movimentação ou resposta oficial.\nA Ouvidoria agradece a sua participação cidadã.`;
+                        await client.sendText(message.from, msgFim);
+
+                        await supabase.from('ouvidoria_messages').insert([{
+                            ticket_id: ticketId, from_type: 'ia', direction: 'outbound', body: msgFim
+                        }]);
+
+                        await supabase.from('ouvidoria_tickets').update({
+                            status: 'novo',
+                            ia_session_active: false
+                        }).eq('id', ticketId);
+
+                        // Agora que o relato acabou, Aciona a IA (GPT-4o-mini) EM BACKGROUND APENAS PARA GERAR O RESUMO E NOTIFICAR ADM
+                        generateOuvidoriaSummary(ticket, client);
+                    } else {
+                        // Apenas coleta calado (o db insert já rodou lá em cima)
+                    }
+                }
+            }
+
+        } catch (e) {
+            console.error(`[${camaraId}] Erro processando msg:`, e);
+        }
+    });
+}
+
+// 4. IA Agora atua apenas como "Backoffice" gerando Resumo do relato finalizado
+async function generateOuvidoriaSummary(ticket, client) {
+    try {
+        console.log(`Gerando Resumo de IA para o ticket ${ticket.id}...`);
+
+        const { data: history } = await supabase
+            .from('ouvidoria_messages')
+            .select('body')
+            .eq('ticket_id', ticket.id)
+            .eq('from_type', 'cidadao') // Só leremos o que o cidadao falou
+            .order('created_at', { ascending: true })
+            .limit(30);
+
+        if (!history || history.length === 0) return;
+
+        const allUserInputs = history.map(h => h.body).join('\n---\n');
+
+        const systemPrompt = `Você é um Analista de Ouvidoria Público.
+Leia o relato completo enviado pelo cidadão via WhatsApp e gere um RESUMO CURTO de 1 (uma) única frase para o Painel Administrativo.
+Retorne APENAS a string do resumo, sem aspas, sem labels, sem gracinhas. Seja direto e capturando o cerne do problema.`;
+
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: "Relato:\n" + allUserInputs }
+            ],
+            temperature: 0.1,
+            max_tokens: 100
+        });
+
+        const resumo = response.choices[0].message.content.trim().replace(/^"|"$/g, '');
+
+        // Salvar o resumo no Ticket
+        await supabase.from('ouvidoria_tickets').update({
+            resumo_ia: resumo,
+            updated_at: new Date().toISOString()
+        }).eq('id', ticket.id);
+
+        // Notificar Admins
+        await notificarAdmins(ticket.camara_id, ticket.tipo_manifestacao || 'Generico', resumo, ticket.protocolo);
+
+    } catch (e) {
+        console.error("Erro gerando resumo da IA:", e);
+    }
+}
+
+// Realtime Escutando Supabase (Respostas Humanas do Painel)
+function startRealtimeListener() {
+    console.log("Iniciando Realtime Listener Global...");
+
+    supabase
+        .channel('public:ouvidoria_messages')
+        .on('postgres_changes',
+            { event: 'INSERT', schema: 'public', table: 'ouvidoria_messages' },
+            async (payload) => {
+                const message = payload.new;
+
+                if (message.direction === 'outbound' && message.from_type === 'admin') {
+                    try {
+                        const { data: ticket } = await supabase
+                            .from('ouvidoria_tickets')
+                            .select('whatsapp_number, camara_id')
+                            .eq('id', message.ticket_id)
+                            .single();
+
+                        if (ticket) {
+                            const client = activeClients.get(ticket.camara_id);
+                            if (client) {
+                                console.log(`[${ticket.camara_id}] Mandando resposta humana para ${ticket.whatsapp_number}`);
+                                await client.sendText(`${ticket.whatsapp_number}@c.us`, message.body);
+                            } else {
+                                console.error(`[${ticket.camara_id}] Tentativa de enviar MSG por admin mas client não conectado.`);
+                            }
+                        }
+                    } catch (e) { console.error("Erro no realtime:", e); }
+                }
+            })
+        .subscribe();
+}
+
+async function notificarAdmins(camaraId, tipo, resumo, protocolo) {
+    const { data: admins } = await supabase
+        .from('profiles')
+        .select('whatsapp_notificacao')
+        .eq('camara_id', camaraId)
+        .eq('recebe_alertas_ouvidoria', true)
+        .not('whatsapp_notificacao', 'is', null);
+
+    if (!admins) return;
+    const client = activeClients.get(camaraId);
+    if (!client) return;
+
+    for (const admin of admins) {
+        try {
+            const num = admin.whatsapp_notificacao.replace(/\D/g, '');
+            if (num) {
+                const text = `🚨 *Nova Manifestação na Ouvidoria*\nProtocolo: ${protocolo}\nTipo: ${tipo}\n\nResumo gerado pela IA:\n_${resumo}_\n\nAcesse o painel do SessionSync para ver os detalhes.`;
+                await client.sendText(`${num}@c.us`, text);
+            }
+        } catch (e) { }
+    }
+}
+
+startRealtimeListener();

@@ -7,8 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { Loader2, User, Mail, Phone, Building, Save, Lock, KeyRound } from 'lucide-react';
+import { Loader2, User, Mail, Phone, Building, Save, Lock, KeyRound, MessageCircle } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Switch } from '@/components/ui/switch';
 import { apiCall } from '@/lib/utils';
 
 export default function Profile() {
@@ -22,6 +23,8 @@ export default function Profile() {
     email: '',
     telefone: '',
     cargo: '',
+    whatsapp_notificacao: '',
+    recebe_alertas_ouvidoria: false,
   });
 
   const [passwordData, setPasswordData] = useState({
@@ -47,6 +50,8 @@ export default function Profile() {
         email: user.email || '',
         telefone: profile.telefone || '',
         cargo: profile.cargo || '',
+        whatsapp_notificacao: profile.whatsapp_notificacao || '',
+        recebe_alertas_ouvidoria: profile.recebe_alertas_ouvidoria || false,
       });
       setAvatarUrl(profile.avatar_url);
     }
@@ -95,6 +100,8 @@ export default function Profile() {
         telefone: formData.telefone,
         cargo: formData.cargo,
         avatar_url: avatarUrl,
+        whatsapp_notificacao: formData.whatsapp_notificacao,
+        recebe_alertas_ouvidoria: formData.recebe_alertas_ouvidoria,
         updated_at: new Date().toISOString(),
       };
 
