@@ -211,6 +211,7 @@ export default function Ouvidoria() {
         .from('ouvidoria_messages')
         .insert({
           ticket_id: selectedTicket.id,
+          camara_id: profile?.camara_id,
           from_type: 'admin',
           direction: 'outbound',
           body: tempMsg.body
@@ -561,7 +562,53 @@ export default function Ouvidoria() {
                                   <Bot className="w-3 h-3" /> Resposta Automática
                                 </div>
                               )}
-                              <p className="whitespace-pre-wrap">{msg.body}</p>
+                              {(() => {
+                                const mediaRegex = /\[MEDIA:(.+?)\]\s+(https?:\/\/[^\s]+)/g;
+                                if (!mediaRegex.test(msg.body)) {
+                                  return <p className="whitespace-pre-wrap">{msg.body}</p>;
+                                }
+
+                                const parts = msg.body.split(mediaRegex);
+                                const elements = [];
+
+                                for (let i = 0; i < parts.length; i++) {
+                                  // As regex split with 2 capture groups returns: [textBefore, group1, group2, textAfter...]
+                                  // So every 3rd index (0, 3, 6...) is normal text
+                                  if (i % 3 === 0) {
+                                    if (parts[i] && parts[i].trim() !== '') {
+                                      elements.push(<span key={`text-${i}`} className="whitespace-pre-wrap block mb-2">{parts[i]}</span>);
+                                    }
+                                  } else if (i % 3 === 1) {
+                                    // This is the MIME type (group 1)
+                                    const mime = parts[i];
+                                    const url = parts[i + 1]; // The URL is always the next item (group 2)
+
+                                    if (mime.startsWith('image/')) {
+                                      elements.push(
+                                        <a href={url} target="_blank" rel="noreferrer" key={`media-${i}`}>
+                                          <img src={url} alt="Mídia Anexada" className="max-w-full rounded-lg mt-2 mb-2 max-h-[300px] object-cover cursor-pointer hover:opacity-90 transition-opacity" />
+                                        </a>
+                                      );
+                                    } else if (mime.startsWith('video/')) {
+                                      elements.push(
+                                        <video src={url} controls className="max-w-full rounded-lg mt-2 mb-2 max-h-[300px]" key={`media-${i}`} />
+                                      );
+                                    } else if (mime.startsWith('audio/') || mime === 'ogg') {
+                                      elements.push(
+                                        <audio src={url} controls className="max-w-full mt-2 mb-2" key={`media-${i}`} />
+                                      );
+                                    } else {
+                                      elements.push(
+                                        <a href={url} target="_blank" rel="noreferrer" key={`media-${i}`} className="flex items-center gap-2 underline mt-2 mb-2 p-2 rounded bg-black/5 dark:bg-white/10">
+                                          📎 Visualizar Anexo ({mime})
+                                        </a>
+                                      );
+                                    }
+                                    i++; // Skip the url part manually so it doesn't get processed in the next iteration
+                                  }
+                                }
+                                return <div className="flex flex-col">{elements}</div>;
+                              })()}
                               <p className={`text-[10px] mt-1 text-right ${isMe ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
                                 {format(new Date(msg.created_at), 'HH:mm')}
                               </p>

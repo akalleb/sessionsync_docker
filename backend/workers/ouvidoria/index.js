@@ -1,7 +1,7 @@
 require('dotenv').config({ path: '../../.env' });
-require('dotenv').config({ path: '../../../.env' });
 const { createClient } = require('@supabase/supabase-js');
 const wppconnect = require('@wppconnect-team/wppconnect');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const OpenAI = require('openai');
 const path = require('path');
 const express = require('express');
@@ -28,6 +28,20 @@ if (!openaiKey) {
     process.exit(1);
 }
 const openai = new OpenAI({ apiKey: openaiKey });
+
+// --- R2 Config ---
+const r2Endpoint = process.env.R2_ACCOUNT_ID
+    ? `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`
+    : process.env.R2_ENDPOINT;
+
+const s3Client = new S3Client({
+    region: 'auto',
+    endpoint: r2Endpoint,
+    credentials: {
+        accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
+        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
+    },
+});
 
 // --- Estado Multi-Tenant ---
 // Dicionário de sessões ativas: camaraId -> WPPClient
@@ -156,8 +170,9 @@ async function startWhatsAppForCamara(camaraId) {
             statusFind: (statusSession, session) => {
                 console.log(`[${camaraId}] Status Session:`, statusSession);
                 if (statusSession === 'isLogged' || statusSession === 'inChat') {
-                    activeClients.set(camaraId, client);
                     qrCodes.delete(camaraId);
+                    // Não acessamos `client` aqui pois causa ReferenceError: Cannot access 'client' before initialization. 
+                    // O cliente será salvo em activeClients logo após o await finalizar.
                 }
             },
             headless: true,
@@ -192,13 +207,29 @@ async function startWhatsAppForCamara(camaraId) {
 // Ouvinte Modificado para fluxo State Machine Determinístico (sem loop de IA)
 function startMessageListener(client, camaraId) {
     client.onMessage(async (message) => {
+        if (message.fromMe) return;
         if (message.isGroupMsg) return;
         if (message.from === 'status@broadcast') return;
         if (message.from.includes('@broadcast')) return; // ignorar mensagens de status/story
 
+        // Ignorar mensagens que chegaram há mais de 2 minutos (evita spam ao ligar o bot e ler histórico não-lido)
+        const currentTimestamp = Math.floor(Date.now() / 1000);
+        if (message.timestamp && (currentTimestamp - message.timestamp > 120)) {
+            console.log(`[${camaraId}] Ignorando mensagem antiga de ${message.from} (${currentTimestamp - message.timestamp}s de atraso)`);
+            return;
+        }
+
         try {
             const phone = message.from.replace('@c.us', '');
-            const body = message.body || (message.type === 'ptt' ? '[Áudio recebido]' : '[Mídia recebida]');
+            const isMedia = message.isMedia || message.type === 'image' || message.type === 'video' || message.type === 'audio' || message.type === 'ptt' || message.type === 'document';
+
+            let body = '';
+            if (isMedia) {
+                body = message.caption || '';
+            } else {
+                body = message.body || '';
+            }
+
             const senderName = message.notifyName || phone;
 
             console.log(`[${camaraId}] Nova mensagem de ${phone}: ${body.substring(0, 30)}...`);
@@ -250,6 +281,7 @@ function startMessageListener(client, camaraId) {
                 // Salvar outbound da saudação
                 await supabase.from('ouvidoria_messages').insert([{
                     ticket_id: ticketId,
+                    camara_id: camaraId,
                     from_type: 'ia',
                     direction: 'outbound',
                     body: greeting
@@ -258,18 +290,78 @@ function startMessageListener(client, camaraId) {
                 ticketId = ticket.id;
             }
 
-            // 2. Salvar Sempre a Mensagem do Cidadão no Histórico
-            await supabase.from('ouvidoria_messages').insert({
+            // --- PROCESSAMENTO DE MIDIA PARA CLOUDFLARE R2 ---
+            let finalBody = body;
+
+            if (isMedia) {
+                try {
+                    console.log(`[${camaraId}] Mídia detectada. Dando bypass para Cloudflare R2...`);
+                    const buffer = await client.decryptFile(message);
+                    let mimeType = message.mimetype || 'application/octet-stream';
+                    let ext = mimeType.split('/')[1]?.split(';')[0] || 'bin';
+
+                    if (message.type === 'ptt' || message.type === 'audio') ext = 'ogg';
+
+                    // Padrão de URL unica
+                    const fileName = `ouvidoria/${camaraId}/${phone}/${Date.now()}_${Math.floor(Math.random() * 1000)}.${ext}`;
+
+                    console.log(`[${camaraId}] Fazendo upload no R2 para key: ${fileName}`);
+                    const uploadParams = {
+                        Bucket: process.env.R2_BUCKET_NAME,
+                        Key: fileName,
+                        Body: buffer,
+                        ContentType: mimeType,
+                    };
+
+                    await s3Client.send(new PutObjectCommand(uploadParams));
+                    console.log(`[${camaraId}] Upload Cloudflare R2 Concluído com Sucesso.`);
+
+                    const publicDomain = process.env.R2_PUBLIC_URL;
+                    const publicUrl = `${publicDomain}/${fileName}`;
+
+                    finalBody = `${body}\n\n[MEDIA:${mimeType}] ${publicUrl}`.trim();
+                } catch (e) {
+                    console.error(`[${camaraId}] Erro ao baixar ou upar mídia p/ R2:`, e);
+                    finalBody = `${body}\n\n[ERRO DOWNLOAD MÍDIA]`.trim();
+                }
+            }
+
+            // 2. Salvar Sempre a Mensagem do Cidadão no Histórico (agora salva a URL do audio/video/foto junto com o texto)
+            const { error: msgInboundErr } = await supabase.from('ouvidoria_messages').insert({
                 ticket_id: ticketId,
+                camara_id: camaraId,
                 from_type: 'cidadao',
                 direction: 'inbound',
-                body: body
+                body: finalBody
             });
+            if (msgInboundErr) console.error(`[${camaraId}] Erro ao salvar mensagem cidadao:`, msgInboundErr);
 
-            // Se acabou de ser criado, não avalia a mensagem inicial como opção de menu
+            // 3. Reativar sessão para tickets antigos que foram fechados ou dados como terminados
+            if (!isNewTicket && ticket.status === 'novo' && !ticket.ia_session_active) {
+                console.log(`[${camaraId}] Reativando sessão de IA para ticket ${ticketId}`);
+
+                await supabase.from('ouvidoria_tickets').update({
+                    status: 'triagem',
+                    ia_session_active: true
+                }).eq('id', ticketId);
+
+                ticket.status = 'triagem';
+                ticket.ia_session_active = true;
+
+                const greeting = `Olá novamente, ${senderName}! A Ouvidoria da Câmara Municipal está à disposição.\nSeu Protocolo atualizado é o nº *${ticket.protocolo}*.\n\nPor favor, digite o *NÚMERO* da opção que melhor descreve sua nova manifestação:\n1 - Sugestão\n2 - Reclamação\n3 - Elogio\n4 - Denúncia\n5 - Solicitação`;
+                await client.sendText(message.from, greeting);
+
+                await supabase.from('ouvidoria_messages').insert([{
+                    ticket_id: ticketId, camara_id: camaraId, from_type: 'ia', direction: 'outbound', body: greeting
+                }]);
+
+                return; // Já respondemos a saudação, não precisa avaliar a máquina de estados para essa primeira msg
+            }
+
+            // Se acabou de ser criado do zero, não avalia a mensagem inicial como opção de menu
             if (isNewTicket) return;
 
-            // 3. Executar Lógica de State Machine APENAS se estiver com a IA
+            // 4. Executar Lógica de State Machine APENAS se estiver com a IA
             const normalizedStatus = ticket.status === 'em_atendimento' ? 'triagem' : ticket.status;
             console.log(`[${camaraId}] Avaliando State Machine para Ticket ${ticketId}. Status Real: ${ticket.status}, Normalizado: ${normalizedStatus}, IA Ativa: ${ticket.ia_session_active}`);
 
@@ -299,17 +391,19 @@ function startMessageListener(client, camaraId) {
                         const msgColeta = `Você selecionou *${tipoEscolhido}*.\n\nPor favor, descreva em detalhes sua manifestação (o que ocorreu, local, data, envolvidos). Você pode enviar mensagens de texto (quantas quiser), ou até mesmo áudios, fotos ou vídeos.\n\nQuando finalizar de enviar TODOS os detalhes, digite a palavra *ENCERRAR* para que sua manifestação seja protocolada e enviada para análise.`;
                         await client.sendText(message.from, msgColeta);
 
-                        await supabase.from('ouvidoria_messages').insert([{
-                            ticket_id: ticketId, from_type: 'ia', direction: 'outbound', body: msgColeta
+                        const { error: msgOutboundErr1 } = await supabase.from('ouvidoria_messages').insert([{
+                            ticket_id: ticketId, camara_id: camaraId, from_type: 'ia', direction: 'outbound', body: msgColeta
                         }]);
+                        if (msgOutboundErr1) console.error(`[${camaraId}] Erro ao salvar msgOutbound1:`, msgOutboundErr1);
                     } else {
                         // Resposta Inválida
                         const msgErro = `Opção inválida.\nPor favor, digite apenas o *NÚMERO* correspondente:\n1 - Sugestão\n2 - Reclamação\n3 - Elogio\n4 - Denúncia\n5 - Solicitação`;
                         await client.sendText(message.from, msgErro);
 
-                        await supabase.from('ouvidoria_messages').insert([{
-                            ticket_id: ticketId, from_type: 'ia', direction: 'outbound', body: msgErro
+                        const { error: msgOutboundErr2 } = await supabase.from('ouvidoria_messages').insert([{
+                            ticket_id: ticketId, camara_id: camaraId, from_type: 'ia', direction: 'outbound', body: msgErro
                         }]);
+                        if (msgOutboundErr2) console.error(`[${camaraId}] Erro ao salvar msgOutbound2:`, msgOutboundErr2);
                     }
                 }
                 else if (normalizedStatus === 'coleta') {
@@ -318,9 +412,10 @@ function startMessageListener(client, camaraId) {
                         const msgFim = `Sua manifestação foi recebida e registrada com sucesso! Ela foi encaminhada ao setor responsável para o processamento interno.\n\nVocê será notificado por este mesmo canal quando houver uma movimentação ou resposta oficial.\nA Ouvidoria agradece a sua participação cidadã.`;
                         await client.sendText(message.from, msgFim);
 
-                        await supabase.from('ouvidoria_messages').insert([{
-                            ticket_id: ticketId, from_type: 'ia', direction: 'outbound', body: msgFim
+                        const { error: msgOutboundErr3 } = await supabase.from('ouvidoria_messages').insert([{
+                            ticket_id: ticketId, camara_id: camaraId, from_type: 'ia', direction: 'outbound', body: msgFim
                         }]);
+                        if (msgOutboundErr3) console.error(`[${camaraId}] Erro ao salvar msgOutbound3:`, msgOutboundErr3);
 
                         await supabase.from('ouvidoria_tickets').update({
                             status: 'novo',
@@ -328,7 +423,9 @@ function startMessageListener(client, camaraId) {
                         }).eq('id', ticketId);
 
                         // Agora que o relato acabou, Aciona a IA (GPT-4o-mini) EM BACKGROUND APENAS PARA GERAR O RESUMO E NOTIFICAR ADM
-                        generateOuvidoriaSummary(ticket, client);
+                        // SOLICITACAO: IA Pausada completamente no final. Cidadão apenas manda e o admin lê manualmente.
+                        // generateOuvidoriaSummary(ticket, client);
+                        console.log(`[${camaraId}] Ticket encerrado. Geração de Resumo via GPT desativada.`);
                     } else {
                         // Apenas coleta calado (o db insert já rodou lá em cima)
                     }

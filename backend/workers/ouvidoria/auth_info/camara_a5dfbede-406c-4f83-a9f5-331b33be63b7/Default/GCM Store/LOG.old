@@ -1,3 +1,3 @@
-2026/02/27-23:29:40.049 11724 Reusing MANIFEST F:\python\sessionsync_docker\backend\workers\ouvidoria\auth_info\camara_a5dfbede-406c-4f83-a9f5-331b33be63b7\Default\GCM Store/MANIFEST-000001
-2026/02/27-23:29:40.050 11724 Recovering log #3
-2026/02/27-23:29:40.050 11724 Reusing old log F:\python\sessionsync_docker\backend\workers\ouvidoria\auth_info\camara_a5dfbede-406c-4f83-a9f5-331b33be63b7\Default\GCM Store/000003.log 
+2026/02/28-10:16:29.264 43c0 Reusing MANIFEST F:\python\sessionsync_docker\backend\workers\ouvidoria\auth_info\camara_a5dfbede-406c-4f83-a9f5-331b33be63b7\Default\GCM Store/MANIFEST-000001
+2026/02/28-10:16:29.264 43c0 Recovering log #3
+2026/02/28-10:16:29.264 43c0 Reusing old log F:\python\sessionsync_docker\backend\workers\ouvidoria\auth_info\camara_a5dfbede-406c-4f83-a9f5-331b33be63b7\Default\GCM Store/000003.log 

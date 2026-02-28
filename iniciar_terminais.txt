@@ -1,0 +1,15 @@
+Terminal 1 (Frontend React): (npm run dev na raiz)
+
+bash
+cd f:\python\sessionsync_docker
+npm run dev
+Terminal 2 (Backend Principal): (npm start no diretório backend)
+
+bash
+cd f:\python\sessionsync_docker\backend
+npm start
+Terminal 3 (Novo Worker da Ouvidoria/IA): (npm start no diretório do worker)
+
+bash
+cd f:\python\sessionsync_docker\backend\workers\ouvidoria
+npm start
