@@ -112,7 +112,7 @@ export default function SessoesList() {
 
   const handleEnterSession = (sessaoId: string) => {
     const isMesaDiretora = vereador?.cargo_mesa && ['Presidente', '1º Secretário', 'Secretário', 'Secretario'].includes(vereador.cargo_mesa);
-    
+
     if (hasRole('admin') || hasRole('super_admin') || isMesaDiretora) {
       navigate(`/sessao/${sessaoId}/controle`);
     } else {
@@ -284,9 +284,9 @@ export default function SessoesList() {
                       </span>
                       {sessao.hora_inicio && (
                         <span>
-                          {sessao.hora_inicio.slice(0, 5)}
+                          {new Date(sessao.hora_inicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                           {sessao.hora_fim &&
-                            ` - ${sessao.hora_fim.slice(0, 5)}`}
+                            ` - ${new Date(sessao.hora_fim).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}
                         </span>
                       )}
                     </div>

@@ -229,9 +229,22 @@ app.get('/health', (req, res) => {
 });
 
 registerR2UploadEndpoint(app);
+
+// LLM Configuration - uses OpenRouter by default, falls back to OpenAI
+const LLM_API_KEY = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
+const LLM_BASE_URL = process.env.OPENROUTER_API_KEY
+    ? 'https://openrouter.ai/api/v1'
+    : undefined; // default OpenAI URL
+
 const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
+    apiKey: LLM_API_KEY,
+    ...(LLM_BASE_URL && { baseURL: LLM_BASE_URL }),
 });
+
+// Model names from env vars (OpenRouter format: provider/model)
+const LLM_MODEL = process.env.LLM_MODEL || 'openai/gpt-4o';
+const LLM_MODEL_MINI = process.env.LLM_MODEL_MINI || 'openai/gpt-4o-mini';
+const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'openai/text-embedding-3-small';
 
 // Helper to get Supabase client with user's token
 const getSupabaseClient = (authHeader) => {
@@ -336,7 +349,7 @@ app.post('/process-transcript', requireAuth, async (req, res) => {
             }`;
 
         const completion = await openai.chat.completions.create({
-            model: 'gpt-4o-mini',
+            model: LLM_MODEL_MINI,
             messages: [
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: fullTranscript }
@@ -508,7 +521,7 @@ app.post('/summarize-content', requireAuth, async (req, res) => {
         }
 
         const completion = await openai.chat.completions.create({
-            model: 'gpt-4o',
+            model: LLM_MODEL,
             messages: [
                 { role: 'system', content: systemMsg },
                 { role: 'user', content: finalPrompt }
@@ -569,7 +582,7 @@ app.post('/summarize-blocks', requireAuth, async (req, res) => {
                     prompt += `\n\nPADRÃO DE NOMES (use para corrigir/normalizar nomes de vereadores):\n- Ao citar vereadores, prefira o NOME OFICIAL.\n- Se aparecer apelido/variação no texto, normalize para o NOME OFICIAL correspondente.\n${nameHintsText}\n`;
                 }
                 const completion = await openai.chat.completions.create({
-                    model: 'gpt-4o',
+                    model: LLM_MODEL,
                     messages: [
                         { role: 'system', content: 'Você é um assistente legislativo especializado.' },
                         { role: 'user', content: prompt }
@@ -635,7 +648,7 @@ const ingestSessionInternal = async (sessionId, supabase) => {
             { "blocks": [{ "type", "title", "start_text", "end_text", "timestamp" }] }`;
 
         const completion = await openai.chat.completions.create({
-            model: 'gpt-4o-mini',
+            model: LLM_MODEL_MINI,
             messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: session.transcript.substring(0, 80000) }],
             temperature: 0.1,
             response_format: { type: "json_object" }
@@ -707,7 +720,7 @@ const ingestSessionInternal = async (sessionId, supabase) => {
                 const builder = PROMPTS[block.type] || PROMPTS.default;
                 const prompt = builder(block.content);
                 const completion = await openai.chat.completions.create({
-                    model: 'gpt-4o',
+                    model: LLM_MODEL,
                     messages: [{ role: 'system', content: 'Você é um assistente legislativo especializado.' }, { role: 'user', content: prompt }],
                     response_format: { type: "json_object" }
                 });
@@ -763,7 +776,7 @@ const ingestSessionInternal = async (sessionId, supabase) => {
             const contentToEmbed = `Title: ${block.title} (Part ${i + 1})\nType: ${block.type}\nContent: ${chunk}`;
 
             try {
-                const embeddingResponse = await openai.embeddings.create({ model: 'text-embedding-3-small', input: contentToEmbed });
+                const embeddingResponse = await openai.embeddings.create({ model: EMBEDDING_MODEL, input: contentToEmbed });
                 embeddingsToInsert.push({
                     session_id: sessionId,
                     camara_id: session.camara_id,
@@ -1137,7 +1150,7 @@ app.post('/normalize-transcript-text', requireAuth, async (req, res) => {
         const userMsg = `Abaixo está um texto de transcrição automática de sessão de câmara municipal, possivelmente com erros de reconhecimento de fala.\n\nREGRAS OBRIGATÓRIAS:\n- NÃO RESUMA o conteúdo.\n- NÃO APAGUE frases, nomes ou números.\n- Corrija apenas palavras claramente erradas, mantendo o significado original.\n- Use a lista oficial de vereadores para corrigir a grafia dos nomes quando necessário.\n- Preserve quebras de linha e estrutura geral do texto.\n\nLISTA OFICIAL DE VEREADORES (referência para nomes):\n${vereadorListText || '(lista vazia)'}\n\nTEXTO A SER CORRIGIDO:\n${normalized}`;
 
         const completion = await openai.chat.completions.create({
-            model: 'gpt-4o',
+            model: LLM_MODEL,
             messages: [
                 { role: 'system', content: systemMsg },
                 { role: 'user', content: userMsg }
@@ -2508,7 +2521,7 @@ app.post('/ask', requireAuth, async (req, res) => {
             const text = h.length > 0 ? h.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n') : '';
             const prompt = `Reescreva a pergunta do usuário como uma consulta independente, clara e completa.\n\nHISTÓRICO:\n${text}\n\nPERGUNTA:\n${q}\n\nCONSULTA:`;
             const r = await openai.chat.completions.create({
-                model: 'gpt-4o',
+                model: LLM_MODEL,
                 messages: [{ role: 'system', content: 'Você reescreve consultas.' }, { role: 'user', content: prompt }],
                 temperature: 0.1
             });
@@ -2517,7 +2530,7 @@ app.post('/ask', requireAuth, async (req, res) => {
         const buildHyDE = async (q) => {
             const prompt = `Gere um texto curto que seria a resposta ideal e factual para a consulta, sem inventar fatos.\nConsulta: ${q}\nResposta ideal:`;
             const r = await openai.chat.completions.create({
-                model: 'gpt-4o',
+                model: LLM_MODEL,
                 messages: [{ role: 'system', content: 'Você gera respostas hipotéticas concisas.' }, { role: 'user', content: prompt }],
                 temperature: 0.2
             });
@@ -2525,8 +2538,8 @@ app.post('/ask', requireAuth, async (req, res) => {
         };
         const standalone = await buildStandalone(query, recent);
         const hyde = await buildHyDE(standalone);
-        const e1 = await openai.embeddings.create({ model: 'text-embedding-3-small', input: standalone });
-        const e2 = await openai.embeddings.create({ model: 'text-embedding-3-small', input: hyde });
+        const e1 = await openai.embeddings.create({ model: EMBEDDING_MODEL, input: standalone });
+        const e2 = await openai.embeddings.create({ model: EMBEDDING_MODEL, input: hyde });
         const m1 = await supabase.rpc('match_session_embeddings', { query_embedding: e1.data[0].embedding, match_threshold: 0.25, match_count: 30, filter_camara_id: camaraId });
         const m2 = await supabase.rpc('match_session_embeddings', { query_embedding: e2.data[0].embedding, match_threshold: 0.25, match_count: 30, filter_camara_id: camaraId });
         const merged = {};
@@ -2568,7 +2581,7 @@ app.post('/ask', requireAuth, async (req, res) => {
         let orderIds = prelim.map(d => d.id);
         try {
             const rr = await openai.chat.completions.create({
-                model: 'gpt-4o',
+                model: LLM_MODEL,
                 messages: [{ role: 'system', content: 'Você reranqueia itens por relevância.' }, { role: 'user', content: rerankPrompt }],
                 temperature: 0,
                 response_format: { type: 'json_object' }
@@ -2738,7 +2751,7 @@ app.post('/ask', requireAuth, async (req, res) => {
         if (isSpeechRank) {
             const rankPrompt = `A partir do contexto, identifique os vereadores e estime quem discursou mais.\nConsidere blocos de "pronunciamentos"/"explicações pessoais" e falas atribuídas.\nRetorne uma análise objetiva com um ranking (Top 3) e justificativa breve.`;
             const c1 = await openai.chat.completions.create({
-                model: 'gpt-4o',
+                model: LLM_MODEL,
                 messages: [
                     { role: 'system', content: `Você é um assistente legislativo oficial da Câmara Municipal.\nUse estritamente o contexto abaixo.\n\nContexto:\n${contextText}` },
                     { role: 'user', content: rankPrompt }
@@ -2789,7 +2802,7 @@ app.post('/ask', requireAuth, async (req, res) => {
                 } else {
                     const projectsPrompt = `Você é um assistente legislativo.\nCom base exclusivamente nas informações abaixo, liste todos os PROJETOS que foram efetivamente VOTADOS neste mês, usando SEMPRE o seguinte formato textual para cada item:\n\n1. Sessão: [Título da sessão] ([Data])\n   Projeto: [Tipo] nº [Número]/[Ano] (se aparecer no texto; caso contrário, descreva de forma clara]\n   Matéria: [Descrição curta e objetiva da matéria]\n   Resultado: [Aprovado/Rejeitado, por unanimidade/maioria, com placar se aparecer]\n\nSe alguma informação não estiver presente no texto, escreva explicitamente \"não informado\" para aquele campo.\nNão invente projetos nem resultados que não estejam apoiados pelo texto.\n\nDados das sessões do mês:\n${projectsContext}`;
                     const cProj = await openai.chat.completions.create({
-                        model: 'gpt-4o',
+                        model: LLM_MODEL,
                         messages: [
                             { role: 'system', content: 'Você é um assistente legislativo oficial da Câmara Municipal. Use apenas as informações fornecidas e não invente projetos que não estejam no texto.' },
                             { role: 'user', content: projectsPrompt }
@@ -2801,7 +2814,7 @@ app.post('/ask', requireAuth, async (req, res) => {
             }
         } else {
             const completion = await openai.chat.completions.create({
-                model: 'gpt-4o',
+                model: LLM_MODEL,
                 messages: [
                     {
                         role: 'system',
@@ -2817,7 +2830,7 @@ app.post('/ask', requireAuth, async (req, res) => {
         try {
             const evalPrompt = `Avalie se a resposta está bem fundamentada no contexto.\nRetorne JSON com "confidence" de 0 a 1 e "needs_more_info" boolean.`;
             const ev = await openai.chat.completions.create({
-                model: 'gpt-4o',
+                model: LLM_MODEL,
                 messages: [
                     { role: 'system', content: 'Você avalia confiança de respostas.' },
                     { role: 'user', content: evalPrompt + `\n\nContexto:\n${contextText}\n\nResposta:\n${answer}\n` }
@@ -2829,13 +2842,13 @@ app.post('/ask', requireAuth, async (req, res) => {
             if (ejson.needs_more_info === true || (ejson.confidence || 0) < 0.6) {
                 const altPrompt = `Gere três variações de consulta mais específicas para melhorar a busca.\nConsulta: ${standalone}\nRetorne JSON {"queries": ["..."]}.`;
                 const aq = await openai.chat.completions.create({
-                    model: 'gpt-4o',
+                    model: LLM_MODEL,
                     messages: [{ role: 'system', content: 'Você cria variações de consulta.' }, { role: 'user', content: altPrompt }],
                     temperature: 0.3,
                     response_format: { type: 'json_object' }
                 });
                 const alts = JSON.parse(aq.choices[0].message.content).queries || [];
-                const altEmbeds = await Promise.all(alts.map(t => openai.embeddings.create({ model: 'text-embedding-3-small', input: t })));
+                const altEmbeds = await Promise.all(alts.map(t => openai.embeddings.create({ model: EMBEDDING_MODEL, input: t })));
                 const altMatches = [];
                 for (const ae of altEmbeds) {
                     const r = await supabase.rpc('match_session_embeddings', { query_embedding: ae.data[0].embedding, match_threshold: 0.2, match_count: 20, filter_camara_id: camaraId });
@@ -2870,7 +2883,7 @@ app.post('/ask', requireAuth, async (req, res) => {
                     }
                 }
                 const completion2 = await openai.chat.completions.create({
-                    model: 'gpt-4o',
+                    model: LLM_MODEL,
                     messages: [
                         {
                             role: 'system',
@@ -2948,7 +2961,7 @@ app.post('/ingest-law', requireAuth, upload.single('file'), async (req, res) => 
         for (const chunk of chunks) {
             try {
                 const embeddingResponse = await openai.embeddings.create({
-                    model: 'text-embedding-3-small',
+                    model: EMBEDDING_MODEL,
                     input: chunk.content,
                 });
 
@@ -3093,20 +3106,20 @@ app.post('/analyze-proposal', requireAuth, async (req, res) => {
         const supabase = getSupabaseClient(authHeader);
         const rewritePrompt = `Reescreva esta proposta em uma consulta jurídica objetiva, citando termos como "competência", "iniciativa", "despesa", "regulamentação", "poder legislativo", "poder executivo".\nProposta: ${proposal}\nConsulta:`;
         const rr = await openai.chat.completions.create({
-            model: 'gpt-4o',
+            model: LLM_MODEL,
             messages: [{ role: 'system', content: 'Você reescreve consultas jurídicas.' }, { role: 'user', content: rewritePrompt }],
             temperature: 0.1
         });
         const standalone = rr.choices[0].message.content.trim();
         const hydePrompt = `Gere um parecer hipotético conciso e factual sobre a proposta, abordando: competência municipal, iniciativa e possível criação de despesa.\nProposta: ${proposal}\nParecer:`;
         const hydeComp = await openai.chat.completions.create({
-            model: 'gpt-4o',
+            model: LLM_MODEL,
             messages: [{ role: 'system', content: 'Você gera parecer hipotético conciso.' }, { role: 'user', content: hydePrompt }],
             temperature: 0.2
         });
         const hyde = hydeComp.choices[0].message.content.trim();
-        const e1 = await openai.embeddings.create({ model: 'text-embedding-3-small', input: standalone });
-        const e2 = await openai.embeddings.create({ model: 'text-embedding-3-small', input: hyde });
+        const e1 = await openai.embeddings.create({ model: EMBEDDING_MODEL, input: standalone });
+        const e2 = await openai.embeddings.create({ model: EMBEDDING_MODEL, input: hyde });
 
         // Lowered threshold from 0.25 to 0.15 to improve recall
         const m1 = await supabase.rpc('match_legal_embeddings', { query_embedding: e1.data[0].embedding, match_threshold: 0.15, match_count: 30, filter_camara_id: camaraId });
@@ -3140,7 +3153,7 @@ app.post('/analyze-proposal', requireAuth, async (req, res) => {
         let orderIds = prelim.map(d => d.id);
         try {
             const rrk = await openai.chat.completions.create({
-                model: 'gpt-4o',
+                model: LLM_MODEL,
                 messages: [{ role: 'system', content: 'Você reranqueia artigos por relevância à consulta.' }, { role: 'user', content: rerankPrompt }],
                 temperature: 0,
                 response_format: { type: 'json_object' }
@@ -3197,7 +3210,7 @@ app.post('/analyze-proposal', requireAuth, async (req, res) => {
             }
         }
         const completion = await openai.chat.completions.create({
-            model: 'gpt-4o',
+            model: LLM_MODEL,
             messages: [
                 { role: 'system', content: `Você é um Consultor Jurídico Legislativo conservador e preciso.\nUse APENAS o contexto legal abaixo.\n\nContexto Legal:\n${context}` },
                 { role: 'user', content: `Proposta: "${proposal}"` }
@@ -3208,7 +3221,7 @@ app.post('/analyze-proposal', requireAuth, async (req, res) => {
         try {
             const evalPrompt = `Avalie se o parecer está bem fundamentado no contexto legal.\nRetorne JSON {"confidence": 0..1, "needs_more_info": true|false}.`;
             const ev = await openai.chat.completions.create({
-                model: 'gpt-4o',
+                model: LLM_MODEL,
                 messages: [{ role: 'system', content: 'Você avalia confiança de pareceres.' }, { role: 'user', content: `${evalPrompt}\n\nContexto:\n${context}\n\nParecer:\n${analysis}` }],
                 temperature: 0,
                 response_format: { type: 'json_object' }
@@ -3217,13 +3230,13 @@ app.post('/analyze-proposal', requireAuth, async (req, res) => {
             if (ej.needs_more_info === true || (ej.confidence || 0) < 0.6) {
                 const altPrompt = `Gere três consultas jurídicas alternativas mais específicas, citando "Lei Orgânica", "Regimento Interno", "competência" e "iniciativa".\nConsulta base: ${standalone}\nJSON {"queries": ["..."]}`;
                 const aq = await openai.chat.completions.create({
-                    model: 'gpt-4o',
+                    model: LLM_MODEL,
                     messages: [{ role: 'system', content: 'Você cria variações de consulta jurídica.' }, { role: 'user', content: altPrompt }],
                     temperature: 0.3,
                     response_format: { type: 'json_object' }
                 });
                 const alts = JSON.parse(aq.choices[0].message.content).queries || [];
-                const altEmbeds = await Promise.all(alts.map(t => openai.embeddings.create({ model: 'text-embedding-3-small', input: t })));
+                const altEmbeds = await Promise.all(alts.map(t => openai.embeddings.create({ model: EMBEDDING_MODEL, input: t })));
                 const altMatches = [];
                 for (const ae of altEmbeds) {
                     const r = await supabase.rpc('match_legal_embeddings', { query_embedding: ae.data[0].embedding, match_threshold: 0.2, match_count: 20, filter_camara_id: camaraId });
@@ -3252,7 +3265,7 @@ app.post('/analyze-proposal', requireAuth, async (req, res) => {
                     }
                 }
                 const completion2 = await openai.chat.completions.create({
-                    model: 'gpt-4o',
+                    model: LLM_MODEL,
                     messages: [
                         { role: 'system', content: `Você é um Consultor Jurídico Legislativo conservador e preciso.\nUse APENAS o contexto legal abaixo.\n\nContexto Legal:\n${context}` },
                         { role: 'user', content: `Proposta: "${proposal}"` }
@@ -3318,7 +3331,7 @@ app.post('/generate-law', requireAuth, async (req, res) => {
             try {
                 const queryText = `${object} ${objectives}`;
                 const embeddingResponse = await openai.embeddings.create({
-                    model: 'text-embedding-3-small',
+                    model: EMBEDDING_MODEL,
                     input: queryText,
                 });
                 const embedding = embeddingResponse.data[0].embedding;
@@ -3366,7 +3379,7 @@ app.post('/generate-law', requireAuth, async (req, res) => {
         4. NÃO INVENTE DATAS PASSADAS. Use SEMPRE o ano atual (${currentYear}) e a data de hoje (${today}) para a assinatura.`;
 
         const completion = await openai.chat.completions.create({
-            model: 'gpt-4o',
+            model: LLM_MODEL,
             messages: [{ role: 'user', content: prompt }],
             temperature: 0.4
         });

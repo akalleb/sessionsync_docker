@@ -118,11 +118,11 @@ const TOOL_IMPLEMENTATIONS = {
   get_legal_context: async ({ camara_id, query }, { serviceSupabase, openai }) => {
     // Embedding search requires service role usually if accessing embeddings table directly,
     // or RLS must permit. Assuming service role for embeddings search to be safe/consistent.
-    
+
     if (!openai) throw new Error("OpenAI client not available");
 
     const embeddingResponse = await openai.embeddings.create({
-      model: 'text-embedding-3-small',
+      model: process.env.EMBEDDING_MODEL || 'openai/text-embedding-3-small',
       input: query,
     });
     const embedding = embeddingResponse.data[0].embedding;
@@ -135,11 +135,11 @@ const TOOL_IMPLEMENTATIONS = {
     });
 
     if (error) {
-       // Fallback: try without RPC if not exists or fails, though usually RPC is best for vector search
-       console.error("Vector search error:", error);
-       return [];
+      // Fallback: try without RPC if not exists or fails, though usually RPC is best for vector search
+      console.error("Vector search error:", error);
+      return [];
     }
-    
+
     if (!chunks || !Array.isArray(chunks)) return [];
 
     return chunks.map(chunk => ({
@@ -151,26 +151,26 @@ const TOOL_IMPLEMENTATIONS = {
 
   generate_minutes: async ({ session_id, minutes_type, style_options }, context) => {
     const { supabase, serviceSupabase, openai } = context;
-    
+
     // 1. Get Session Detail
     const session = await TOOL_IMPLEMENTATIONS.get_session_detail({ session_id }, context);
-    
+
     // 2. Get Structure
     const structure = await TOOL_IMPLEMENTATIONS.get_session_structure({ session_id }, context);
-    
+
     // 3. Get Camara Context
     let camara = null;
     if (session.camara_id) {
-        camara = await TOOL_IMPLEMENTATIONS.get_camara_context({ camara_id: session.camara_id }, context);
+      camara = await TOOL_IMPLEMENTATIONS.get_camara_context({ camara_id: session.camara_id }, context);
     }
 
     // 4. Get Legal Context (only if Solene or requested)
     let legalContext = [];
     if (minutes_type === 'solene' && session.camara_id) {
-        legalContext = await TOOL_IMPLEMENTATIONS.get_legal_context({ 
-            camara_id: session.camara_id, 
-            query: "sessão solene protocolo homenagens" 
-        }, context);
+      legalContext = await TOOL_IMPLEMENTATIONS.get_legal_context({
+        camara_id: session.camara_id,
+        query: "sessão solene protocolo homenagens"
+      }, context);
     }
 
     // 5. Build Prompt
@@ -194,11 +194,11 @@ ${structure.estrutura_sugerida}
 
 BLOCOS DA TRANSCRIÇÃO (Use estes conteúdos para preencher a ata):
 ${JSON.stringify(session.blocks.map(b => ({
-    tipo: b.type,
-    titulo: b.title,
-    orador: b.speaker,
-    conteudo: b.summary || b.content
-})), null, 2)}
+      tipo: b.type,
+      titulo: b.title,
+      orador: b.speaker,
+      conteudo: b.summary || b.content
+    })), null, 2)}
 
 CONTEXTO LEGAL (Use se relevante):
 ${legalContext.map(l => `- ${l.source} (${l.reference}): ${l.content}`).join('\n')}
@@ -213,12 +213,12 @@ INSTRUÇÕES:
 
     // 6. Call LLM
     const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini", // Or gpt-4o if available/affordable
-        messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt }
-        ],
-        temperature: 0.3,
+      model: process.env.LLM_MODEL_MINI || 'openai/gpt-4o-mini',
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+      temperature: 0.3,
     });
 
     const minutesText = completion.choices[0].message.content;
@@ -226,15 +226,15 @@ INSTRUÇÕES:
     // 7. Save result (using Service Role to bypass RLS write check if needed, though usually user should have write access)
     // We use serviceSupabase here to ensure it saves even if RLS is tricky, but strictly we should use 'supabase' if the user has permission.
     // Given the requirements "Salvar resultado em sessions.final_minutes via Service Role", we use serviceSupabase.
-    
+
     await serviceSupabase
-        .from('sessions')
-        .update({ final_minutes: minutesText })
-        .eq('id', session_id);
+      .from('sessions')
+      .update({ final_minutes: minutesText })
+      .eq('id', session_id);
 
     return {
-        minutes_text: minutesText,
-        used_sources: legalContext.map(l => l.source)
+      minutes_text: minutesText,
+      used_sources: legalContext.map(l => l.source)
     };
   }
 };
@@ -249,55 +249,55 @@ function setupMcpServer(app, { getSupabaseClient, getServiceSupabase, openai }) 
   // MCP Protocol Endpoint (Simplified HTTP JSON-RPC style)
   app.post('/mcp', async (req, res) => {
     const { method, params, id } = req.body;
-    
+
     // Auth Check
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
-    
+
     const supabase = getSupabaseClient(authHeader);
     const { data: { user }, error } = await supabase.auth.getUser();
     if (error || !user) return res.status(401).json({ error: "Invalid token" });
 
     const context = {
-        supabase,
-        serviceSupabase: getServiceSupabase(),
-        openai,
-        user
+      supabase,
+      serviceSupabase: getServiceSupabase(),
+      openai,
+      user
     };
 
     try {
-        if (method === 'tools/list') {
-            return res.json({
-                jsonrpc: "2.0",
-                id,
-                result: {
-                    tools: Object.entries(TOOLS).map(([name, def]) => ({
-                        name,
-                        ...def
-                    }))
-                }
-            });
-        }
+      if (method === 'tools/list') {
+        return res.json({
+          jsonrpc: "2.0",
+          id,
+          result: {
+            tools: Object.entries(TOOLS).map(([name, def]) => ({
+              name,
+              ...def
+            }))
+          }
+        });
+      }
 
-        if (method === 'tools/call') {
-            const { name, arguments: args } = params;
-            const result = await executeTool(name, args, context);
-            return res.json({
-                jsonrpc: "2.0",
-                id,
-                result: { content: [{ type: "text", text: JSON.stringify(result) }] }
-            });
-        }
+      if (method === 'tools/call') {
+        const { name, arguments: args } = params;
+        const result = await executeTool(name, args, context);
+        return res.json({
+          jsonrpc: "2.0",
+          id,
+          result: { content: [{ type: "text", text: JSON.stringify(result) }] }
+        });
+      }
 
-        return res.status(400).json({ error: "Method not supported" });
+      return res.status(400).json({ error: "Method not supported" });
 
     } catch (e) {
-        console.error("MCP Error:", e);
-        return res.status(500).json({ 
-            jsonrpc: "2.0", 
-            id, 
-            error: { code: -32603, message: e.message } 
-        });
+      console.error("MCP Error:", e);
+      return res.status(500).json({
+        jsonrpc: "2.0",
+        id,
+        error: { code: -32603, message: e.message }
+      });
     }
   });
 

@@ -71,17 +71,17 @@ export default function SessaoControl() {
   // Carregar votações pendentes
   useEffect(() => {
     if (!sessao?.id) return;
-    
+
     const fetchPendentes = async () => {
-        const { data } = await supabase
-            .from('votacoes')
-            .select('*')
-            .eq('sessao_id', sessao.id)
-            .eq('status', 'aguardando')
-            .order('created_at', { ascending: true });
-        setVotacoesPendentes(data as Votacao[] || []);
+      const { data } = await supabase
+        .from('votacoes')
+        .select('*')
+        .eq('sessao_id', sessao.id)
+        .eq('status', 'aguardando')
+        .order('created_at', { ascending: true });
+      setVotacoesPendentes(data as Votacao[] || []);
     };
-    
+
     fetchPendentes();
 
     const channel = supabase
@@ -92,7 +92,7 @@ export default function SessaoControl() {
         () => fetchPendentes()
       )
       .subscribe();
-      
+
     return () => { supabase.removeChannel(channel); };
   }, [sessao?.id]);
 
@@ -100,22 +100,22 @@ export default function SessaoControl() {
     if (!sessao || !novaVotacao.titulo) return;
 
     try {
-        const { error } = await supabase.from('votacoes').insert({
-          sessao_id: sessao.id,
-          titulo: novaVotacao.titulo,
-          descricao: novaVotacao.descricao,
-          tipo: novaVotacao.tipo,
-          status: 'aguardando', // Criar como aguardando por padrão
-        });
+      const { error } = await supabase.from('votacoes').insert({
+        sessao_id: sessao.id,
+        titulo: novaVotacao.titulo,
+        descricao: novaVotacao.descricao,
+        tipo: novaVotacao.tipo,
+        status: 'aguardando', // Criar como aguardando por padrão
+      });
 
-        if (error) throw error;
+      if (error) throw error;
 
-        setNovaVotacao({ titulo: '', descricao: '', tipo: 'simples' });
-        setShowNovaVotacao(false);
-        toast({ title: 'Votação criada e aguardando início.' });
+      setNovaVotacao({ titulo: '', descricao: '', tipo: 'simples' });
+      setShowNovaVotacao(false);
+      toast({ title: 'Votação criada e aguardando início.' });
     } catch (error) {
-        console.error(error);
-        toast({ title: 'Erro ao criar votação', variant: 'destructive' });
+      console.error(error);
+      toast({ title: 'Erro ao criar votação', variant: 'destructive' });
     }
   };
 
@@ -188,13 +188,13 @@ export default function SessaoControl() {
     setTipoFala(solicitacao.tipo);
     // Definir tempo padrão baseado no tipo
     if (solicitacao.tipo === 'tribuna') {
-        setTempoFalaMinutos(15);
+      setTempoFalaMinutos(15);
     } else if (solicitacao.tipo === 'aparte' || solicitacao.tipo === 'ordem') {
-        setTempoFalaMinutos(3);
+      setTempoFalaMinutos(3);
     } else {
-        setTempoFalaMinutos(5);
+      setTempoFalaMinutos(5);
     }
-    
+
     toast({ title: 'Solicitação aceita. Tempo configurado, clique em Conceder Palavra.' });
   };
 
@@ -203,7 +203,7 @@ export default function SessaoControl() {
       .from('solicitacoes_fala')
       .update({ status: 'cancelada' })
       .eq('id', solicitacaoId);
-      
+
     toast({ title: 'Solicitação removida da fila' });
   };
 
@@ -290,7 +290,6 @@ export default function SessaoControl() {
       .from('sessao_presencas')
       .update({
         presente,
-        hora_chegada: presente ? new Date().toTimeString().split(' ')[0] : null,
       })
       .eq('sessao_id', sessao.id)
       .eq('vereador_id', vereadorId);
@@ -316,10 +315,10 @@ export default function SessaoControl() {
 
     const updates: Record<string, unknown> = { status };
     if (status === 'em_andamento' && !sessao.hora_inicio) {
-      updates.hora_inicio = new Date().toTimeString().split(' ')[0];
+      updates.hora_inicio = new Date().toISOString();
     }
     if (status === 'encerrada') {
-      updates.hora_fim = new Date().toTimeString().split(' ')[0];
+      updates.hora_fim = new Date().toISOString();
     }
 
     await supabase.from('sessoes').update(updates).eq('id', sessao.id);
@@ -329,8 +328,8 @@ export default function SessaoControl() {
         status === 'em_andamento'
           ? 'Sessão iniciada'
           : status === 'pausada'
-          ? 'Sessão pausada'
-          : 'Sessão encerrada',
+            ? 'Sessão pausada'
+            : 'Sessão encerrada',
     });
   };
 
@@ -399,8 +398,8 @@ export default function SessaoControl() {
       votosFavor > votosContra
         ? 'aprovada'
         : votosFavor < votosContra
-        ? 'rejeitada'
-        : 'empate';
+          ? 'rejeitada'
+          : 'empate';
 
     await supabase
       .from('votacoes')
@@ -472,7 +471,7 @@ export default function SessaoControl() {
         .eq('id', tempoFalaAtual.id);
 
       if (error) throw error;
-      
+
       toast({ title: 'Tempo de fala encerrado.' });
     } catch (error) {
       console.error('Erro ao encerrar fala:', error);
@@ -685,7 +684,7 @@ export default function SessaoControl() {
                             {v.descricao && <p className="text-sm text-muted-foreground">{v.descricao}</p>}
                             <Badge variant="outline" className="mt-2">{v.tipo}</Badge>
                           </div>
-                          <Button 
+                          <Button
                             onClick={() => handleIniciarVotacaoPendente(v.id)}
                             disabled={!!votacaoAtual}
                           >
@@ -799,15 +798,15 @@ export default function SessaoControl() {
                               {solicitacao.vereador?.nome_parlamentar || solicitacao.vereador?.nome}
                             </p>
                             <div className="flex items-center gap-2 mt-1">
-                                <Badge variant={solicitacao.tipo === 'tribuna' ? 'default' : 'secondary'} className="text-xs">
-                                  {solicitacao.tipo === 'discussao' && 'Discussão'}
-                                  {solicitacao.tipo === 'aparte' && 'Aparte'}
-                                  {solicitacao.tipo === 'ordem' && 'Questão de Ordem'}
-                                  {solicitacao.tipo === 'tribuna' && 'Tribuna'}
-                                </Badge>
-                                <span className="text-xs text-muted-foreground">
-                                  {new Date(solicitacao.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                </span>
+                              <Badge variant={solicitacao.tipo === 'tribuna' ? 'default' : 'secondary'} className="text-xs">
+                                {solicitacao.tipo === 'discussao' && 'Discussão'}
+                                {solicitacao.tipo === 'aparte' && 'Aparte'}
+                                {solicitacao.tipo === 'ordem' && 'Questão de Ordem'}
+                                {solicitacao.tipo === 'tribuna' && 'Tribuna'}
+                              </Badge>
+                              <span className="text-xs text-muted-foreground">
+                                {new Date(solicitacao.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
                             </div>
                           </div>
                           <div className="flex gap-1">

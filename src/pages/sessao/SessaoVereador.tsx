@@ -36,7 +36,7 @@ export default function SessaoVereador() {
   const { sessao, presencas, votacaoAtual, votos, pauta, tempoFalaAtual, loading, refetch } =
     useSessaoRealtime(id || null);
   const { fases } = useFasesSessao();
-  
+
   const [vereadorAtual, setVereadorAtual] = useState<{ id: string; nome: string; nome_parlamentar?: string | null } | null>(null);
   const [solicitacaoAtiva, setSolicitacaoAtiva] = useState<SolicitacaoFala | null>(null);
   const [submittingVote, setSubmittingVote] = useState(false);
@@ -46,7 +46,7 @@ export default function SessaoVereador() {
   useEffect(() => {
     const identificarVereador = async () => {
       if (!profile?.user_id) return;
-      
+
       const { data, error } = await supabase
         .from('vereadores')
         .select('id, nome, nome_parlamentar')
@@ -59,7 +59,7 @@ export default function SessaoVereador() {
         console.warn('Usuário logado não vinculado a um vereador:', profile.user_id);
       }
     };
-    
+
     identificarVereador();
   }, [profile?.user_id]);
 
@@ -76,10 +76,10 @@ export default function SessaoVereador() {
       }
 
       const presencaAtual = presencas.find(p => p.vereador_id === vereadorAtual.id);
-      
-      console.log('Verificando presença:', { 
-        vereador: vereadorAtual.nome, 
-        status: presencaAtual ? (presencaAtual.presente ? 'Presente' : 'Ausente') : 'Não encontrado na lista' 
+
+      console.log('Verificando presença:', {
+        vereador: vereadorAtual.nome,
+        status: presencaAtual ? (presencaAtual.presente ? 'Presente' : 'Ausente') : 'Não encontrado na lista'
       });
 
       // Se a presença existe mas está como ausente, atualiza para presente
@@ -88,11 +88,10 @@ export default function SessaoVereador() {
           .from('sessao_presencas')
           .update({
             presente: true,
-            hora_chegada: new Date().toTimeString().split(' ')[0],
           })
           .eq('sessao_id', id)
           .eq('vereador_id', vereadorAtual.id);
-          
+
         if (error) {
           console.error('Erro ao marcar presença:', error);
           toast({ title: 'Erro ao confirmar presença', description: error.message, variant: 'destructive' });
@@ -114,7 +113,7 @@ export default function SessaoVereador() {
         .eq('vereador_id', vereadorAtual.id)
         .eq('status', 'pendente')
         .maybeSingle();
-      
+
       setSolicitacaoAtiva(data as SolicitacaoFala | null);
     };
 
@@ -124,11 +123,11 @@ export default function SessaoVereador() {
       .channel(`solicitacoes-${id}-${vereadorAtual.id}`)
       .on(
         'postgres_changes',
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'solicitacoes_fala', 
-          filter: `sessao_id=eq.${id} AND vereador_id=eq.${vereadorAtual.id}` 
+        {
+          event: '*',
+          schema: 'public',
+          table: 'solicitacoes_fala',
+          filter: `sessao_id=eq.${id} AND vereador_id=eq.${vereadorAtual.id}`
         },
         () => fetchSolicitacao()
       )
@@ -168,7 +167,7 @@ export default function SessaoVereador() {
       .from('solicitacoes_fala')
       .update({ status: 'cancelada' })
       .eq('id', solicitacaoAtiva.id);
-      
+
     toast({ title: 'Solicitação cancelada' });
   };
 
@@ -201,9 +200,9 @@ export default function SessaoVereador() {
       // Atualizar contagem na votação (trigger faz isso? se não, manual)
       // O código original fazia update manual, vamos manter consistência
       const field = voto === 'favor' ? 'votos_favor' : voto === 'contra' ? 'votos_contra' : 'abstencoes';
-      const { error: rpcError } = await supabase.rpc('increment_vote', { 
-        row_id: votacaoAtual.id, 
-        field_name: field 
+      const { error: rpcError } = await supabase.rpc('increment_vote', {
+        row_id: votacaoAtual.id,
+        field_name: field
       });
 
       if (rpcError) {
@@ -322,22 +321,22 @@ export default function SessaoVereador() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <Button 
-                    className="h-20 text-lg bg-green-600 hover:bg-green-700" 
+                  <Button
+                    className="h-20 text-lg bg-green-600 hover:bg-green-700"
                     onClick={() => handleVotar('favor')}
                     disabled={submittingVote}
                   >
                     FAVORÁVEL
                   </Button>
-                  <Button 
-                    className="h-20 text-lg bg-red-600 hover:bg-red-700" 
+                  <Button
+                    className="h-20 text-lg bg-red-600 hover:bg-red-700"
                     onClick={() => handleVotar('contra')}
                     disabled={submittingVote}
                   >
                     CONTRÁRIO
                   </Button>
-                  <Button 
-                    className="h-20 text-lg bg-gray-500 hover:bg-gray-600" 
+                  <Button
+                    className="h-20 text-lg bg-gray-500 hover:bg-gray-600"
                     onClick={() => handleVotar('abstencao')}
                     disabled={submittingVote}
                   >
@@ -351,21 +350,21 @@ export default function SessaoVereador() {
 
         {/* Se o vereador estiver falando agora */}
         {tempoFalaAtual?.vereador_id === vereadorAtual.id && (
-           <Card className="bg-green-50 border-green-200">
-             <CardContent className="flex items-center justify-between p-6">
-               <div className="flex items-center gap-4">
-                 <Mic className="h-8 w-8 text-green-600 animate-pulse" />
-                 <div>
-                   <h3 className="text-xl font-bold text-green-800">PALAVRA CONCEDIDA</h3>
-                   <p className="text-green-700">Você está com a palavra ({tempoFalaAtual.tipo})</p>
-                 </div>
-               </div>
-               <div className="text-3xl font-mono font-bold text-green-900">
-                 {/* Aqui poderia ter um timer local sincronizado */}
-                 AO VIVO
-               </div>
-             </CardContent>
-           </Card>
+          <Card className="bg-green-50 border-green-200">
+            <CardContent className="flex items-center justify-between p-6">
+              <div className="flex items-center gap-4">
+                <Mic className="h-8 w-8 text-green-600 animate-pulse" />
+                <div>
+                  <h3 className="text-xl font-bold text-green-800">PALAVRA CONCEDIDA</h3>
+                  <p className="text-green-700">Você está com a palavra ({tempoFalaAtual.tipo})</p>
+                </div>
+              </div>
+              <div className="text-3xl font-mono font-bold text-green-900">
+                {/* Aqui poderia ter um timer local sincronizado */}
+                AO VIVO
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -376,7 +375,7 @@ export default function SessaoVereador() {
                 <TabsTrigger value="pauta" className="flex-1">Pauta / Rito</TabsTrigger>
                 <TabsTrigger value="ata" className="flex-1">Ata Anterior</TabsTrigger>
               </TabsList>
-              
+
               <TabsContent value="pauta">
                 <AgendaManagement
                   sessaoId={sessao.id}
@@ -387,7 +386,7 @@ export default function SessaoVereador() {
                   readonly={true}
                 />
               </TabsContent>
-              
+
               <TabsContent value="ata">
                 <Card>
                   <CardHeader>
@@ -425,34 +424,34 @@ export default function SessaoVereador() {
                   </div>
                 ) : (
                   <>
-                    <Button 
-                      variant="outline" 
-                      className="w-full justify-start gap-2" 
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start gap-2"
                       onClick={() => handleSolicitarFala('discussao')}
                       disabled={tempoFalaAtual?.vereador_id === vereadorAtual.id}
                     >
                       <Users className="h-4 w-4" />
                       Pela Ordem / Discussão
                     </Button>
-                    <Button 
-                      variant="outline" 
-                      className="w-full justify-start gap-2" 
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start gap-2"
                       onClick={() => handleSolicitarFala('aparte')}
                       disabled={tempoFalaAtual?.vereador_id === vereadorAtual.id}
                     >
                       <Mic className="h-4 w-4" />
                       Solicitar Aparte
                     </Button>
-                    <Button 
-                      variant="outline" 
-                      className="w-full justify-start gap-2" 
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start gap-2"
                       onClick={() => handleSolicitarFala('ordem')}
                       disabled={tempoFalaAtual?.vereador_id === vereadorAtual.id}
                     >
                       <AlertCircle className="h-4 w-4" />
                       Questão de Ordem
                     </Button>
-                    
+
                     <div className="pt-2 border-t mt-2">
                       <Button
                         variant="ghost"

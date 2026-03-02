@@ -22,12 +22,16 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
     auth: { persistSession: false, autoRefreshToken: false }
 });
 
-const openaiKey = process.env.OPENAI_API_KEY;
+const openaiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
 if (!openaiKey) {
-    console.error("FATAL: OPENAI_API_KEY não encontrada.");
+    console.error("FATAL: OPENROUTER_API_KEY (ou OPENAI_API_KEY) não encontrada.");
     process.exit(1);
 }
-const openai = new OpenAI({ apiKey: openaiKey });
+const openai = new OpenAI({
+    apiKey: openaiKey,
+    ...(process.env.OPENROUTER_API_KEY && { baseURL: 'https://openrouter.ai/api/v1' }),
+});
+const LLM_MODEL_MINI = process.env.LLM_MODEL_MINI || 'openai/gpt-4o-mini';
 
 // --- R2 Config ---
 const r2Endpoint = process.env.R2_ACCOUNT_ID
@@ -460,7 +464,7 @@ Leia o relato completo enviado pelo cidadão via WhatsApp e gere um RESUMO CURTO
 Retorne APENAS a string do resumo, sem aspas, sem labels, sem gracinhas. Seja direto e capturando o cerne do problema.`;
 
         const response = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: LLM_MODEL_MINI,
             messages: [
                 { role: "system", content: systemPrompt },
                 { role: "user", content: "Relato:\n" + allUserInputs }
