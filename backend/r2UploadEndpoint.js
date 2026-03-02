@@ -3,16 +3,16 @@ const sanitize = require('sanitize-filename');
 const { generateUploadUrl, getR2Client } = require('./r2Storage');
 const { PutObjectCommand } = require('@aws-sdk/client-s3');
 
-const upload = multer({ 
+const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 2 * 1024 * 1024 * 1024 } 
+  limits: { fileSize: 2 * 1024 * 1024 * 1024 }
 });
 
 const ALLOWED_MIME_TYPES = [
-  'image/jpeg', 'image/png', 'image/webp', 
-  'application/pdf', 
-  'text/plain', 
-  'application/msword', 
+  'image/jpeg', 'image/png', 'image/webp',
+  'application/pdf',
+  'text/plain',
+  'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'audio/mpeg',
   'audio/wav',
@@ -31,10 +31,10 @@ const registerR2UploadEndpoint = (app) => {
       // Security: Validate Token with Supabase
       const supabaseUrl = process.env.VITE_SUPABASE_URL;
       const supabaseAnonKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-      
+
       if (!supabaseUrl || !supabaseAnonKey) {
-          console.error('Supabase vars missing in r2UploadEndpoint');
-          return res.status(500).json({ error: 'Server misconfiguration' });
+        console.error('Supabase vars missing in r2UploadEndpoint');
+        return res.status(500).json({ error: 'Server misconfiguration' });
       }
 
       const { createClient } = require('@supabase/supabase-js');
@@ -57,7 +57,7 @@ const registerR2UploadEndpoint = (app) => {
 
       // Security: Validate File Type
       if (!ALLOWED_MIME_TYPES.includes(file.mimetype) && !file.mimetype.startsWith('audio/')) {
-         return res.status(400).json({ error: 'Invalid file type' });
+        return res.status(400).json({ error: 'Invalid file type' });
       }
 
       // Security: Sanitize Key (Prevent Path Traversal)
@@ -65,12 +65,9 @@ const registerR2UploadEndpoint = (app) => {
       key = key.replace(/^(\.\.(\/|\\|$))+/, '');
       // Ensure we don't allow absolute paths or traversal
       const safeKey = key.split('/').map(part => sanitize(part)).join('/');
-      
-      if (!safeKey || safeKey !== key) {
-          // If sanitization changed the key significantly (other than just ensuring safety of components), 
-          // we might want to reject or just use the safe one.
-          // For now, let's use the safe one but warn if it was empty.
-          if (!safeKey) return res.status(400).json({ error: 'Invalid key' });
+
+      if (!safeKey) {
+        return res.status(400).json({ error: 'Invalid key' });
       }
 
       const client = getR2Client();
@@ -85,7 +82,7 @@ const registerR2UploadEndpoint = (app) => {
 
       const command = new PutObjectCommand({
         Bucket: bucketName,
-        Key: key,
+        Key: safeKey,
         Body: file.buffer,
         ContentType: file.mimetype,
       });
@@ -93,10 +90,10 @@ const registerR2UploadEndpoint = (app) => {
       await client.send(command);
 
       const publicUrl = process.env.R2_PUBLIC_URL
-        ? `${process.env.R2_PUBLIC_URL}/${key}`
+        ? `${process.env.R2_PUBLIC_URL}/${safeKey}`
         : null;
 
-      res.json({ success: true, key, publicUrl });
+      res.json({ success: true, key: safeKey, publicUrl });
     } catch (error) {
       console.error('Error in /upload-to-r2:', error);
       const message =

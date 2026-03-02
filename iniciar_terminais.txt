@@ -13,3 +13,51 @@ Terminal 3 (Novo Worker da Ouvidoria/IA): (npm start no diretório do worker)
 bash
 cd f:\python\sessionsync_docker\backend\workers\ouvidoria
 npm start
+
+
+
+
+1. Acesse sua VPS
+Abra o terminal e conecte-se:
+
+Bash
+ssh root@seu-ip-da-vps
+2. Vá para a pasta do projeto
+Sempre certifique-se de estar na pasta onde o Docker "mora":
+
+Bash
+cd /var/www/sessionsync_docker
+3. Puxe as atualizações do GitHub
+Este comando baixa o código novo. Se ele pedir sua senha, lembre-se de usar o Token do GitHub:
+
+Bash
+git pull origin main
+Dica: Se você fez alguma alteração rápida direto na VPS e o git pull der erro, force a atualização com:
+git reset --hard origin/main
+
+4. Reconstrua e Reinicie os Containers
+Este é o comando principal. Ele lê o seu docker-compose.yml, reconstrói as imagens com o código novo e reinicia os serviços:
+
+Bash
+docker compose up -d --build
+5. Limpeza de "Gordura" (Opcional)
+Para evitar que o disco da sua VPS encha com versões antigas das imagens que acabamos de substituir:
+
+Bash
+docker image prune -f
+Resumo em uma única linha (O "Combo")
+Se você quiser fazer tudo de uma vez só, pode copiar e colar esta linha inteira após logar no SSH:
+
+Bash
+cd /var/www/sessionsync_docker && git pull origin main && docker compose up -d --build && docker image prune -f
+Como conferir se deu certo?
+Para ver se os containers subiram sem erros internos, olhe os logs do backend:
+
+Bash
+docker logs --tail 50 -f sessionsync-backend
+(Aperte Ctrl + C para sair da visualização de logs).
+
+cd /var/www/sessionsync_docker && git pull origin main && docker compose up -d --build && docker image prune -f
+
+cd /var/www/sessionsync_docker && docker compose build --no-cache frontend && docker compose up -d
+

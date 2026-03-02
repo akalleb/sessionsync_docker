@@ -57,7 +57,11 @@ export default function Ouvidoria() {
   const [isStarting, setIsStarting] = useState(false);
 
   // API baseURL for the isolated worker
-  const WORKER_API_URL = 'http://localhost:3005/api/whatsapp';
+  // In production, the worker is proxied through Nginx at /worker-api/whatsapp
+  // In development, it runs on localhost:3005
+  const WORKER_API_URL = import.meta.env.VITE_WORKER_URL
+    ? `${(import.meta.env.VITE_WORKER_URL as string).replace(/\/$/, '')}/api/whatsapp`
+    : (import.meta.env.DEV ? 'http://localhost:3005/api/whatsapp' : '/worker-api/whatsapp');
 
   // 1. Carregar status do WhatsApp
   const fetchWaStatus = async () => {

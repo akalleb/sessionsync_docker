@@ -2,9 +2,9 @@ const express = require('express');
 const cors = require('cors');
 let helmet = null;
 try {
-  helmet = require('helmet');
+    helmet = require('helmet');
 } catch (e) {
-  console.warn('Helmet module not found, continuing without it:', e.message);
+    console.warn('Helmet module not found, continuing without it:', e.message);
 }
 const rateLimit = require('express-rate-limit');
 const { YoutubeTranscript } = require('@danielxceron/youtube-transcript');
@@ -32,10 +32,10 @@ try {
     } catch (e) {
         // Not in PATH, try local binary on Windows
         if (process.platform === 'win32' && fs.existsSync(ytDlpBinaryPath)) {
-             ytDlpWrap = new YTDlpWrap(ytDlpBinaryPath);
+            ytDlpWrap = new YTDlpWrap(ytDlpBinaryPath);
         } else {
-             // Let it try to download or use default
-             ytDlpWrap = new YTDlpWrap();
+            // Let it try to download or use default
+            ytDlpWrap = new YTDlpWrap();
         }
     }
 } catch (e) {
@@ -45,11 +45,11 @@ try {
 
 const { PROMPTS } = require('./prompts');
 const {
-  stripDiacritics,
-  escapeRegex,
-  applyNameMapPostProcessing,
-  stripPlaceholders,
-  ensureBinary,
+    stripDiacritics,
+    escapeRegex,
+    applyNameMapPostProcessing,
+    stripPlaceholders,
+    ensureBinary,
 } = require('./utils');
 
 const { generateUploadUrl, deleteFile, getR2Client } = require('./r2Storage');
@@ -63,7 +63,7 @@ const configureR2Cors = async () => {
     try {
         const client = getR2Client();
         const bucketName = process.env.R2_BUCKET_NAME;
-        
+
         if (!client || !bucketName) {
             console.log('Skipping R2 CORS config: credentials missing');
             return;
@@ -110,10 +110,10 @@ require('dotenv').config({ path: path.join(__dirname, '../.env') });
 // Debug logging for deployment
 console.log('Current working directory:', process.cwd());
 try {
-  console.log('Contents of current directory:', fs.readdirSync(__dirname));
-  console.log('Contents of node_modules:', fs.readdirSync(path.join(__dirname, 'node_modules')).slice(0, 10));
+    console.log('Contents of current directory:', fs.readdirSync(__dirname));
+    console.log('Contents of node_modules:', fs.readdirSync(path.join(__dirname, 'node_modules')).slice(0, 10));
 } catch (e) {
-  console.log('Could not list directories:', e.message);
+    console.log('Could not list directories:', e.message);
 }
 
 const app = express();
@@ -123,38 +123,38 @@ const isDev = process.env.NODE_ENV !== 'production';
 app.set('trust proxy', 1);
 
 if (helmet) {
-  app.use(
-    helmet({
-      crossOriginResourcePolicy: { policy: 'cross-origin' },
-      contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'self'"],
-          connectSrc: [
-            "'self'", 
-            "https://oshuwfkevodjmemcnyas.supabase.co", 
-            "wss://oshuwfkevodjmemcnyas.supabase.co",
-            "https://api.openai.com", 
-            "https://api.assemblyai.com", 
-            "https://www.googleapis.com",
-            "https://*.r2.cloudflarestorage.com"
-          ],
-          scriptSrc: ["'self'", "'unsafe-inline'"],
-          styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-          fontSrc: ["'self'", "https://fonts.gstatic.com"],
-          imgSrc: ["'self'", "data:", "https://oshuwfkevodjmemcnyas.supabase.co"],
-          mediaSrc: ["'self'", "https://*.r2.cloudflarestorage.com", "https://*.r2.dev"],
-          frameSrc: ["'self'", "https://www.youtube.com", "https://www.youtube-nocookie.com"],
-          childSrc: ["'self'", "https://www.youtube.com", "https://www.youtube-nocookie.com"],
-        },
-      },
-    })
-  );
+    app.use(
+        helmet({
+            crossOriginResourcePolicy: { policy: 'cross-origin' },
+            contentSecurityPolicy: {
+                directives: {
+                    defaultSrc: ["'self'"],
+                    connectSrc: [
+                        "'self'",
+                        "https://oshuwfkevodjmemcnyas.supabase.co",
+                        "wss://oshuwfkevodjmemcnyas.supabase.co",
+                        "https://api.openai.com",
+                        "https://api.assemblyai.com",
+                        "https://www.googleapis.com",
+                        "https://*.r2.cloudflarestorage.com"
+                    ],
+                    scriptSrc: ["'self'", "'unsafe-inline'"],
+                    styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+                    fontSrc: ["'self'", "https://fonts.gstatic.com"],
+                    imgSrc: ["'self'", "data:", "https://oshuwfkevodjmemcnyas.supabase.co"],
+                    mediaSrc: ["'self'", "https://*.r2.cloudflarestorage.com", "https://*.r2.dev"],
+                    frameSrc: ["'self'", "https://www.youtube.com", "https://www.youtube-nocookie.com"],
+                    childSrc: ["'self'", "https://www.youtube.com", "https://www.youtube-nocookie.com"],
+                },
+            },
+        })
+    );
 }
 
 // Security: Rate Limiter (Prevent Brute Force/DDoS)
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 1000, // Relaxed limit for testing
+    max: 200, // Production limit: 200 requests per 15 minutes per IP
     standardHeaders: true,
     legacyHeaders: false,
 });
@@ -162,37 +162,37 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // Multer config for memory storage (files processed in memory)
-const upload = multer({ 
+const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
 });
 
 // Security: Configure CORS
 const allowedOrigins = [
-  'http://localhost:8080',
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  'https://sessionsync.com.br',
-  process.env.FRONTEND_URL
+    'http://localhost:8080',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'https://sessionsync.com.br',
+    process.env.FRONTEND_URL
 ].filter(Boolean);
 
 app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) === -1) {
-      // Strict Mode: Block unknown origins in production
-      if (isDev) {
-         console.log(`CORS Allowed (Dev): ${origin}`);
-         return callback(null, true); 
-      }
-      console.error(`CORS Blocked: ${origin}`);
-      var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-      return callback(new Error(msg), false);
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+
+        if (allowedOrigins.indexOf(origin) === -1) {
+            // Strict Mode: Block unknown origins in production
+            if (isDev) {
+                console.log(`CORS Allowed (Dev): ${origin}`);
+                return callback(null, true);
+            }
+            console.error(`CORS Blocked: ${origin}`);
+            var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+            return callback(new Error(msg), false);
+        }
+        return callback(null, true);
     }
-    return callback(null, true);
-  }
 }));
 
 app.use(express.json({ limit: '50mb' })); // Increased limit for large transcripts
@@ -202,78 +202,78 @@ app.use(express.json({ limit: '50mb' })); // Increased limit for large transcrip
 
 // Middleware: Require Authentication
 const requireAuth = async (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    return res.status(401).json({ error: 'Unauthorized: No token provided' });
-  }
-
-  try {
-    const supabase = getSupabaseClient(authHeader);
-    const { data: { user }, error } = await supabase.auth.getUser();
-
-    if (error || !user) {
-      return res.status(401).json({ error: 'Unauthorized: Invalid token' });
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+        return res.status(401).json({ error: 'Unauthorized: No token provided' });
     }
 
-    req.user = user; // Attach user to request
-    next();
-  } catch (error) {
-    console.error('Auth Middleware Error:', error);
-    return res.status(500).json({ error: 'Internal Server Error during authentication' });
-  }
+    try {
+        const supabase = getSupabaseClient(authHeader);
+        const { data: { user }, error } = await supabase.auth.getUser();
+
+        if (error || !user) {
+            return res.status(401).json({ error: 'Unauthorized: Invalid token' });
+        }
+
+        req.user = user; // Attach user to request
+        next();
+    } catch (error) {
+        console.error('Auth Middleware Error:', error);
+        return res.status(500).json({ error: 'Internal Server Error during authentication' });
+    }
 };
 
 // Health Check Endpoint (Public)
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', timestamp: new Date() });
+    res.status(200).json({ status: 'ok', timestamp: new Date() });
 });
 
 registerR2UploadEndpoint(app);
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+    apiKey: process.env.OPENAI_API_KEY,
 });
 
 // Helper to get Supabase client with user's token
 const getSupabaseClient = (authHeader) => {
-  const token = authHeader?.replace('Bearer ', '');
-  return createClient(
-    process.env.VITE_SUPABASE_URL,
-    process.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-    {
-      global: {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      },
-    }
-  );
+    const token = authHeader?.replace('Bearer ', '');
+    return createClient(
+        process.env.VITE_SUPABASE_URL,
+        process.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        {
+            global: {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            },
+        }
+    );
 };
 
 let serviceSupabase = null;
 const getServiceSupabase = () => {
-  if (serviceSupabase) return serviceSupabase;
+    if (serviceSupabase) return serviceSupabase;
 
-  let url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-  let serviceKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE ||
-    process.env.SUPABASE_SERVICE ||
-    process.env.SUPABASE_SECRET_KEY;
+    let url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+    let serviceKey =
+        process.env.SUPABASE_SERVICE_ROLE_KEY ||
+        process.env.SUPABASE_SERVICE_KEY ||
+        process.env.SUPABASE_SERVICE_ROLE ||
+        process.env.SUPABASE_SERVICE ||
+        process.env.SUPABASE_SECRET_KEY;
 
-  if (typeof url === 'string') url = url.trim();
-  if (typeof serviceKey === 'string') serviceKey = serviceKey.trim();
+    if (typeof url === 'string') url = url.trim();
+    if (typeof serviceKey === 'string') serviceKey = serviceKey.trim();
 
-  if (!url || !serviceKey) return null;
+    if (!url || !serviceKey) return null;
 
-  serviceSupabase = createClient(url, serviceKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  });
+    serviceSupabase = createClient(url, serviceKey, {
+        auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+        },
+    });
 
-  return serviceSupabase;
+    return serviceSupabase;
 };
 
 // Ensure binary exists (Imported from utils)
@@ -291,15 +291,15 @@ const getServiceSupabase = () => {
 
 // 1. Process Transcript (Segmentation)
 app.post('/process-transcript', requireAuth, async (req, res) => {
-  try {
-    const { transcript } = req.body;
-    // Auth check handled by middleware
-    if (!transcript) return res.status(400).json({ error: 'Transcript is required' });
+    try {
+        const { transcript } = req.body;
+        // Auth check handled by middleware
+        if (!transcript) return res.status(400).json({ error: 'Transcript is required' });
 
-    const fullTranscript = typeof transcript === 'string' ? transcript : String(transcript);
-    console.log(`Processing transcript segmentation... Length: ${fullTranscript.length} chars`);
+        const fullTranscript = typeof transcript === 'string' ? transcript : String(transcript);
+        console.log(`Processing transcript segmentation... Length: ${fullTranscript.length} chars`);
 
-    const systemPrompt = `Você é um assistente especializado em atas de câmaras municipais. 
+        const systemPrompt = `Você é um assistente especializado em atas de câmaras municipais. 
             Sua tarefa é analisar a transcrição bruta de uma sessão e identificar onde cada bloco lógico começa e termina.
             Você DEVE dividir o texto em MÚLTIPLOS blocos, seguindo estritamente a Ordem Canônica abaixo.
 
@@ -335,210 +335,210 @@ app.post('/process-transcript', requireAuth, async (req, res) => {
               ]
             }`;
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: fullTranscript } 
-      ],
-      temperature: 0.1,
-      response_format: { type: "json_object" }
-    });
-
-    const content = completion.choices[0].message.content;
-    let extractedBlocks = [];
-    
-    try {
-        const parsed = JSON.parse(content);
-        extractedBlocks = Array.isArray(parsed.blocks) ? parsed.blocks : [];
-    } catch (e) {
-        console.error('Error parsing JSON:', e);
-        return res.status(500).json({ error: 'Failed to parse AI response' });
-    }
-
-    if (!extractedBlocks || extractedBlocks.length === 0) {
-        return res.json({
-            blocks: [
-                {
-                    id: `block-${Date.now()}-0`,
-                    type: 'outros',
-                    title: 'Transcrição completa',
-                    content: fullTranscript.trim(),
-                    timestamp: '00:00:00',
-                    order: 0,
-                },
+        const completion = await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: fullTranscript }
             ],
+            temperature: 0.1,
+            response_format: { type: "json_object" }
         });
+
+        const content = completion.choices[0].message.content;
+        let extractedBlocks = [];
+
+        try {
+            const parsed = JSON.parse(content);
+            extractedBlocks = Array.isArray(parsed.blocks) ? parsed.blocks : [];
+        } catch (e) {
+            console.error('Error parsing JSON:', e);
+            return res.status(500).json({ error: 'Failed to parse AI response' });
+        }
+
+        if (!extractedBlocks || extractedBlocks.length === 0) {
+            return res.json({
+                blocks: [
+                    {
+                        id: `block-${Date.now()}-0`,
+                        type: 'outros',
+                        title: 'Transcrição completa',
+                        content: fullTranscript.trim(),
+                        timestamp: '00:00:00',
+                        order: 0,
+                    },
+                ],
+            });
+        }
+
+        const transcriptLower = fullTranscript.toLowerCase();
+
+        // Refined Extraction Loop
+        // 1. Locate starts with fuzzy fallback
+        const blockStarts = extractedBlocks.map((block) => {
+            let startIndex = fullTranscript.indexOf(block.start_text);
+
+            // Fallback 1: Try finding just the first 50 chars
+            if (startIndex === -1 && block.start_text) {
+                const snippet = block.start_text.substring(0, 50);
+                startIndex = fullTranscript.indexOf(snippet);
+            }
+
+            // Fallback 2: Try finding just the first 20 chars
+            if (startIndex === -1 && block.start_text) {
+                const snippet = block.start_text.substring(0, 20);
+                startIndex = fullTranscript.indexOf(snippet);
+            }
+
+            // Fallback 3: Try ignoring case for the first 30 chars
+            if (startIndex === -1 && block.start_text) {
+                const snippet = block.start_text.substring(0, 30).toLowerCase();
+                startIndex = transcriptLower.indexOf(snippet);
+            }
+
+            return startIndex;
+        });
+
+        // 2. Build contiguous blocks (Ensure NO GAPS)
+        let currentPos = 0;
+        const contiguousBlocks = extractedBlocks.map((block, index) => {
+            let startIndex = blockStarts[index];
+
+            // If start not found or before current pos, snap to current pos
+            if (startIndex === -1 || startIndex < currentPos) startIndex = currentPos;
+
+            // If gap detected between currentPos and startIndex, we must decide where it belongs.
+            // Current strategy: Attach the gap to the previous block (not possible here as we are building current)
+            // OR: Attach gap to THIS block (start this block earlier)
+            // Let's attach the gap to THIS block to avoid losing text.
+            if (startIndex > currentPos) {
+                startIndex = currentPos;
+            }
+
+            let endIndex;
+            if (index < extractedBlocks.length - 1) {
+                let nextStart = blockStarts[index + 1];
+
+                // Resolve next start index with same logic
+                if (nextStart === -1) {
+                    // Try to find it again to be sure
+                    // (Already done above, but we can't do much if it's -1)
+                }
+
+                if (nextStart !== -1 && nextStart > startIndex) {
+                    endIndex = nextStart;
+                } else {
+                    // If next block start is invalid or before this block, 
+                    // search for a valid start in subsequent blocks
+                    let foundFuture = false;
+                    for (let j = index + 2; j < extractedBlocks.length; j++) {
+                        if (blockStarts[j] > startIndex) {
+                            endIndex = blockStarts[j];
+                            foundFuture = true;
+                            break;
+                        }
+                    }
+                    if (!foundFuture) endIndex = fullTranscript.length;
+                }
+            } else {
+                endIndex = fullTranscript.length;
+            }
+
+            const blockContent = fullTranscript.substring(startIndex, endIndex);
+            currentPos = endIndex;
+
+            return {
+                id: `block-${Date.now()}-${index}`,
+                type: block.type || 'outros',
+                title: block.title || 'Bloco',
+                content: blockContent.trim(), // Content might be empty if logic fails, but we try to cover all text
+                timestamp: block.timestamp || '00:00:00',
+                order: index
+            };
+        });
+
+        // Filter out empty blocks if any
+        const validBlocks = contiguousBlocks.filter(b => b.content.length > 0);
+
+        res.json({ blocks: validBlocks });
+
+    } catch (error) {
+        console.error('Process Transcript Error:', error);
+        res.status(500).json({ error: error.message });
     }
-
-    const transcriptLower = fullTranscript.toLowerCase();
-
-    // Refined Extraction Loop
-    // 1. Locate starts with fuzzy fallback
-    const blockStarts = extractedBlocks.map((block) => {
-        let startIndex = fullTranscript.indexOf(block.start_text);
-        
-        // Fallback 1: Try finding just the first 50 chars
-        if (startIndex === -1 && block.start_text) {
-             const snippet = block.start_text.substring(0, 50);
-             startIndex = fullTranscript.indexOf(snippet);
-        }
-
-        // Fallback 2: Try finding just the first 20 chars
-        if (startIndex === -1 && block.start_text) {
-             const snippet = block.start_text.substring(0, 20);
-             startIndex = fullTranscript.indexOf(snippet);
-        }
-        
-        // Fallback 3: Try ignoring case for the first 30 chars
-        if (startIndex === -1 && block.start_text) {
-             const snippet = block.start_text.substring(0, 30).toLowerCase();
-             startIndex = transcriptLower.indexOf(snippet);
-        }
-
-        return startIndex;
-    });
-
-    // 2. Build contiguous blocks (Ensure NO GAPS)
-    let currentPos = 0;
-    const contiguousBlocks = extractedBlocks.map((block, index) => {
-       let startIndex = blockStarts[index];
-       
-       // If start not found or before current pos, snap to current pos
-       if (startIndex === -1 || startIndex < currentPos) startIndex = currentPos;
-
-       // If gap detected between currentPos and startIndex, we must decide where it belongs.
-       // Current strategy: Attach the gap to the previous block (not possible here as we are building current)
-       // OR: Attach gap to THIS block (start this block earlier)
-       // Let's attach the gap to THIS block to avoid losing text.
-       if (startIndex > currentPos) {
-           startIndex = currentPos; 
-       }
-
-       let endIndex;
-       if (index < extractedBlocks.length - 1) {
-           let nextStart = blockStarts[index + 1];
-           
-           // Resolve next start index with same logic
-           if (nextStart === -1) {
-               // Try to find it again to be sure
-               // (Already done above, but we can't do much if it's -1)
-           }
-
-           if (nextStart !== -1 && nextStart > startIndex) {
-               endIndex = nextStart;
-           } else {
-               // If next block start is invalid or before this block, 
-               // search for a valid start in subsequent blocks
-               let foundFuture = false;
-               for (let j = index + 2; j < extractedBlocks.length; j++) {
-                   if (blockStarts[j] > startIndex) {
-                       endIndex = blockStarts[j];
-                       foundFuture = true;
-                       break;
-                   }
-               }
-               if (!foundFuture) endIndex = fullTranscript.length;
-           }
-       } else {
-           endIndex = fullTranscript.length;
-       }
-       
-       const blockContent = fullTranscript.substring(startIndex, endIndex);
-       currentPos = endIndex;
-       
-       return {
-          id: `block-${Date.now()}-${index}`,
-          type: block.type || 'outros',
-          title: block.title || 'Bloco',
-          content: blockContent.trim(), // Content might be empty if logic fails, but we try to cover all text
-          timestamp: block.timestamp || '00:00:00',
-          order: index
-       };
-    });
-    
-    // Filter out empty blocks if any
-    const validBlocks = contiguousBlocks.filter(b => b.content.length > 0);
-
-    res.json({ blocks: validBlocks });
-
-  } catch (error) {
-    console.error('Process Transcript Error:', error);
-    res.status(500).json({ error: error.message });
-  }
 });
 
 // 2. Summarize Content (Single Block)
 app.post('/summarize-content', requireAuth, async (req, res) => {
-  try {
-    const { content, prompt, blockType, nameHints, nameMap } = req.body;
-    if (!content) return res.status(400).json({ error: 'Content is required' });
+    try {
+        const { content, prompt, blockType, nameHints, nameMap } = req.body;
+        if (!content) return res.status(400).json({ error: 'Content is required' });
 
-    let finalPrompt = '';
-    let systemMsg = 'Você é um assistente legislativo especializado.';
-    let jsonMode = true;
+        let finalPrompt = '';
+        let systemMsg = 'Você é um assistente legislativo especializado.';
+        let jsonMode = true;
 
-    let nameHintsText = '';
-    if (typeof nameHints === 'string') {
-        nameHintsText = nameHints.trim();
-    } else if (Array.isArray(nameHints)) {
-        nameHintsText = nameHints.map((v) => (typeof v === 'string' ? v.trim() : '')).filter(Boolean).join('\n');
-    }
-
-    if (prompt) {
-        // If custom prompt, use it directly
-        finalPrompt = prompt + `\n\nTexto: "${content}"`;
-        systemMsg = 'Você é um assistente útil. Siga as instruções do usuário.';
-        jsonMode = false;
-    } else {
-        // Use specialized prompt
-        const builder = PROMPTS[blockType] || PROMPTS.default;
-        // Check if builder is a function or string (in original backend it was function)
-        if (typeof builder === 'function') {
-            finalPrompt = builder(content);
-        } else {
-            // Should not happen with current structure, but for safety
-            finalPrompt = `Resuma: ${content}`;
-            jsonMode = false;
+        let nameHintsText = '';
+        if (typeof nameHints === 'string') {
+            nameHintsText = nameHints.trim();
+        } else if (Array.isArray(nameHints)) {
+            nameHintsText = nameHints.map((v) => (typeof v === 'string' ? v.trim() : '')).filter(Boolean).join('\n');
         }
+
+        if (prompt) {
+            // If custom prompt, use it directly
+            finalPrompt = prompt + `\n\nTexto: "${content}"`;
+            systemMsg = 'Você é um assistente útil. Siga as instruções do usuário.';
+            jsonMode = false;
+        } else {
+            // Use specialized prompt
+            const builder = PROMPTS[blockType] || PROMPTS.default;
+            // Check if builder is a function or string (in original backend it was function)
+            if (typeof builder === 'function') {
+                finalPrompt = builder(content);
+            } else {
+                // Should not happen with current structure, but for safety
+                finalPrompt = `Resuma: ${content}`;
+                jsonMode = false;
+            }
+        }
+
+        if (nameHintsText.length > 0) {
+            finalPrompt += `\n\nPADRÃO DE NOMES (use para corrigir/normalizar nomes de vereadores):\n- Ao citar vereadores, prefira o NOME OFICIAL.\n- Se aparecer apelido/variação no texto, normalize para o NOME OFICIAL correspondente.\n${nameHintsText}\n`;
+        }
+
+        const completion = await openai.chat.completions.create({
+            model: 'gpt-4o',
+            messages: [
+                { role: 'system', content: systemMsg },
+                { role: 'user', content: finalPrompt }
+            ],
+            temperature: 0.3,
+            response_format: jsonMode ? { type: "json_object" } : undefined
+        });
+
+        const rawContent = completion.choices[0].message.content;
+        let summary = '';
+        if (jsonMode) {
+            try {
+                const jsonResp = JSON.parse(rawContent);
+                const candidate = jsonResp.texto;
+                summary = typeof candidate === 'string' && candidate.trim().length > 0 ? candidate : rawContent;
+            } catch (e) {
+                summary = rawContent;
+            }
+        } else {
+            summary = rawContent;
+        }
+
+        summary = applyNameMapPostProcessing(summary, nameMap);
+        summary = stripPlaceholders(summary);
+        res.json({ summary });
+
+    } catch (error) {
+        console.error('Summarize Content Error:', error);
+        res.status(500).json({ error: error.message });
     }
-
-    if (nameHintsText.length > 0) {
-        finalPrompt += `\n\nPADRÃO DE NOMES (use para corrigir/normalizar nomes de vereadores):\n- Ao citar vereadores, prefira o NOME OFICIAL.\n- Se aparecer apelido/variação no texto, normalize para o NOME OFICIAL correspondente.\n${nameHintsText}\n`;
-    }
-
-    const completion = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        messages: [
-        { role: 'system', content: systemMsg },
-        { role: 'user', content: finalPrompt }
-        ],
-        temperature: 0.3,
-        response_format: jsonMode ? { type: "json_object" } : undefined
-    });
-
-    const rawContent = completion.choices[0].message.content;
-    let summary = '';
-    if (jsonMode) {
-      try {
-          const jsonResp = JSON.parse(rawContent);
-          const candidate = jsonResp.texto;
-          summary = typeof candidate === 'string' && candidate.trim().length > 0 ? candidate : rawContent;
-      } catch (e) {
-          summary = rawContent;
-      }
-    } else {
-      summary = rawContent;
-    }
-
-    summary = applyNameMapPostProcessing(summary, nameMap);
-    summary = stripPlaceholders(summary);
-    res.json({ summary });
-
-  } catch (error) {
-    console.error('Summarize Content Error:', error);
-    res.status(500).json({ error: error.message });
-  }
 });
 
 // 3. Summarize Blocks (Batch - Keep for compatibility)
@@ -559,7 +559,7 @@ app.post('/summarize-blocks', requireAuth, async (req, res) => {
         } else if (Array.isArray(nameHints)) {
             nameHintsText = nameHints.map((v) => (typeof v === 'string' ? v.trim() : '')).filter(Boolean).join('\n');
         }
-        
+
         const promises = blocks.map(async (block) => {
             if (!block.content) return block;
             try {
@@ -576,14 +576,14 @@ app.post('/summarize-blocks', requireAuth, async (req, res) => {
                     ],
                     response_format: { type: "json_object" }
                 });
-                
+
                 const rawContent = completion.choices[0].message.content;
                 let summary = '';
                 try {
                     const jsonResp = JSON.parse(rawContent);
                     const candidate = jsonResp.texto;
                     summary = typeof candidate === 'string' && candidate.trim().length > 0 ? candidate : rawContent;
-                } catch(e) { summary = rawContent; }
+                } catch (e) { summary = rawContent; }
 
                 summary = applyNameMapPostProcessing(summary, nameMap);
                 summary = stripPlaceholders(summary);
@@ -645,7 +645,7 @@ const ingestSessionInternal = async (sessionId, supabase) => {
         try {
             const parsed = JSON.parse(completion.choices[0].message.content);
             extractedBlocks = parsed.blocks || [];
-        } catch {}
+        } catch { }
 
         const blockStarts = extractedBlocks.map((block) => {
             let startIndex = session.transcript.indexOf(block.start_text);
@@ -672,7 +672,7 @@ const ingestSessionInternal = async (sessionId, supabase) => {
                     }
                 }
                 if (nextStart !== -1 && nextStart > startIndex) endIndex = nextStart;
-                else endIndex = session.transcript.length; 
+                else endIndex = session.transcript.length;
             } else {
                 endIndex = session.transcript.length;
             }
@@ -734,7 +734,7 @@ const ingestSessionInternal = async (sessionId, supabase) => {
     if (session.final_minutes && typeof session.final_minutes === 'string' && session.final_minutes.trim().length > 0) {
         blocksToProcess.push({ title: 'Ata Final', type: 'ata_final', content: session.final_minutes.trim() });
     }
-    
+
     if (blocks && blocks.length > 0) {
         for (const b of blocks) if (b.content) blocksToProcess.push({ title: b.title, type: b.type, content: b.content });
     } else if (session.transcript) {
@@ -760,7 +760,7 @@ const ingestSessionInternal = async (sessionId, supabase) => {
 
         for (let i = 0; i < contentChunks.length; i++) {
             const chunk = contentChunks[i];
-            const contentToEmbed = `Title: ${block.title} (Part ${i+1})\nType: ${block.type}\nContent: ${chunk}`;
+            const contentToEmbed = `Title: ${block.title} (Part ${i + 1})\nType: ${block.type}\nContent: ${chunk}`;
 
             try {
                 const embeddingResponse = await openai.embeddings.create({ model: 'text-embedding-3-small', input: contentToEmbed });
@@ -771,14 +771,14 @@ const ingestSessionInternal = async (sessionId, supabase) => {
                     metadata: { title: block.title, type: block.type, session_title: session.title, session_date: session.date, session_id: sessionId, chunk_index: i },
                     embedding: embeddingResponse.data[0].embedding
                 });
-            } catch {}
+            } catch { }
         }
     }
 
     if (embeddingsToInsert.length > 0) {
         await supabase.from('session_embeddings').insert(embeddingsToInsert);
     }
-    
+
     return true;
 };
 
@@ -796,7 +796,7 @@ const runAutoSync = async () => {
             .from('sessions')
             .select('id')
             .or('transcript.neq.null,final_minutes.neq.null');
-        
+
         if (sessionError) throw sessionError;
 
         // 2. Get all sessions with embeddings
@@ -804,11 +804,11 @@ const runAutoSync = async () => {
         // A better query would be to find sessions NOT in session_embeddings
         // Supabase/PostgREST doesn't support "NOT IN" easily with join on unrelated tables in one go without raw SQL or RPC
         // So we fetch IDs from embeddings (lightweight-ish)
-        
+
         const { data: embeddings, error: embedError } = await supabase
             .from('session_embeddings')
             .select('session_id');
-        
+
         if (embedError) throw embedError;
 
         const embeddedIds = new Set((embeddings || []).map(e => e.session_id));
@@ -826,7 +826,7 @@ const runAutoSync = async () => {
                 }
             }
         } else {
-             console.log('Auto-Sync: All sessions are synchronized.');
+            console.log('Auto-Sync: All sessions are synchronized.');
         }
     } catch (err) {
         console.error('Auto-Sync Error:', err);
@@ -849,9 +849,9 @@ app.post('/sync-session', requireAuth, async (req, res) => {
         const authHeader = req.headers.authorization;
         if (!sessionId) return res.status(400).json({ error: 'Session ID required' });
         const supabase = getSupabaseClient(authHeader);
-        
+
         await ingestSessionInternal(sessionId, supabase);
-        
+
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -862,13 +862,13 @@ app.post('/assembly-transcribe', requireAuth, async (req, res) => {
     try {
         const { audioUrl, language_code, speaker_labels, punctuate } = req.body;
         if (!audioUrl) return res.status(400).json({ error: 'audioUrl is required' });
-        
+
         const apiKey = process.env.ASSEMBLYAI_API_KEY;
         if (!apiKey) return res.status(500).json({ error: 'ASSEMBLYAI_API_KEY not configured' });
 
         // Ensure audioUrl is a string and valid
         if (typeof audioUrl !== 'string') {
-             return res.status(400).json({ error: 'Invalid audioUrl format' });
+            return res.status(400).json({ error: 'Invalid audioUrl format' });
         }
 
         console.log(`Starting AssemblyAI transcription for URL: ${audioUrl}`);
@@ -881,9 +881,9 @@ app.post('/assembly-transcribe', requireAuth, async (req, res) => {
             format_text: true,
             speech_threshold: 0.3
         }, {
-            headers: { 
+            headers: {
                 authorization: apiKey,
-                'Content-Type': 'application/json' 
+                'Content-Type': 'application/json'
             }
         });
 
@@ -894,13 +894,13 @@ app.post('/assembly-transcribe', requireAuth, async (req, res) => {
         const errorData = error.response?.data || error.message;
         const statusCode = error.response?.status || 500;
         console.error('Assembly Transcribe Error:', JSON.stringify(errorData, null, 2));
-        
+
         // Return a clean error message to frontend
         let userMessage = 'Erro ao iniciar transcrição.';
         if (typeof errorData === 'object' && errorData.error) {
             userMessage = `Erro AssemblyAI: ${errorData.error}`;
         } else if (typeof errorData === 'string') {
-             userMessage = errorData;
+            userMessage = errorData;
         }
 
         res.status(statusCode).json({ error: userMessage, details: errorData });
@@ -1162,16 +1162,20 @@ app.post('/get-upload-credentials', requireAuth, async (req, res) => {
         // Verify Auth (Middleware already checked token validity, double check user if needed)
         // const authHeader = req.headers.authorization;
         // if (!authHeader) ... 
-        
+
         // Middleware attached user to req.user
         if (!req.user) {
-             return res.status(401).json({ error: 'Unauthorized: Invalid token' });
+            return res.status(401).json({ error: 'Unauthorized: Invalid token' });
         }
 
         const apiKey = process.env.ASSEMBLYAI_API_KEY;
         if (!apiKey) return res.status(500).json({ error: 'ASSEMBLYAI_API_KEY not found in server env' });
 
-        res.json({ apiKey });
+        // Security: Do NOT send the API key to the frontend.
+        // Instead, use the /assembly-transcribe and /assembly-status endpoints as proxies.
+        res.status(410).json({
+            error: 'This endpoint has been deprecated for security reasons. Use /assembly-transcribe instead.'
+        });
 
     } catch (error) {
         console.error('Server Error in get-upload-credentials:', error);
@@ -1192,14 +1196,14 @@ app.post('/generate-upload-url', requireAuth, async (req, res) => {
         }
 
         const url = await generateUploadUrl(filename, contentType);
-        
+
         // Better Public URL logic:
         // 1. If R2_PUBLIC_URL is set, use it (best for performance if bucket is public/CDN)
         // 2. If NOT set, fallback to our own backend proxy (ensures persistence even if bucket is private)
-        const backendUrl = process.env.BACKEND_URL || process.env.VITE_BACKEND_URL || ''; 
+        const backendUrl = process.env.BACKEND_URL || process.env.VITE_BACKEND_URL || '';
         const proxyUrl = `${backendUrl}/serve-file/${filename}`;
 
-        const publicUrl = process.env.R2_PUBLIC_URL 
+        const publicUrl = process.env.R2_PUBLIC_URL
             ? `${process.env.R2_PUBLIC_URL}/${filename}`
             : proxyUrl;
 
@@ -1240,7 +1244,7 @@ app.get('/serve-file/*key', async (req, res) => {
         if (!client) return res.status(500).send('Storage not configured');
 
         const bucketName = process.env.R2_BUCKET_NAME;
-        
+
         // Get object from R2
         const { GetObjectCommand } = require('@aws-sdk/client-s3');
         const command = new GetObjectCommand({
@@ -1253,7 +1257,7 @@ app.get('/serve-file/*key', async (req, res) => {
         // Forward headers
         if (response.ContentType) res.setHeader('Content-Type', response.ContentType);
         if (response.ContentLength) res.setHeader('Content-Length', response.ContentLength);
-        
+
         // Pipe stream
         response.Body.pipe(res);
 
@@ -1378,7 +1382,7 @@ app.post('/admin/get-user-emails', requireAuth, async (req, res) => {
                 .from('profiles')
                 .select('user_id, camara_id')
                 .in('user_id', ids);
-            
+
             const allowedMap = new Set();
             (targetProfiles || []).forEach(p => {
                 if (p.camara_id === adminProfile.camara_id) {
@@ -1569,18 +1573,18 @@ app.post('/ouvidoria/tickets/:id/reply', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
         const { message } = req.body;
-        
+
         if (!message) return res.status(400).json({ error: 'Message required' });
 
         const serviceClient = getServiceSupabase();
-        
+
         // 1. Get ticket to find phone number
         const { data: ticket } = await serviceClient
             .from('ouvidoria_tickets')
             .select('whatsapp_number')
             .eq('id', id)
             .single();
-            
+
         if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
 
         // 2. Send via WhatsApp
@@ -1598,7 +1602,7 @@ app.post('/ouvidoria/tickets/:id/reply', requireAuth, async (req, res) => {
                 direction: 'outbound',
                 body: message
             });
-            
+
         if (saveError) throw saveError;
 
         // 4. Update ticket timestamp
@@ -1630,7 +1634,7 @@ app.post('/process-youtube', requireAuth, async (req, res) => {
             // Tenta buscar legendas em português primeiro, depois inglês, depois qualquer
             // YoutubeTranscript.fetchTranscript não tem opção direta de "fetch all", mas retorna array
             const transcriptItems = await YoutubeTranscript.fetchTranscript(youtubeUrl, { lang: 'pt' })
-                                    .catch(() => YoutubeTranscript.fetchTranscript(youtubeUrl)); // Fallback to default/auto
+                .catch(() => YoutubeTranscript.fetchTranscript(youtubeUrl)); // Fallback to default/auto
 
             if (Array.isArray(transcriptItems) && transcriptItems.length > 0) {
                 const transcriptText = transcriptItems
@@ -1649,7 +1653,7 @@ app.post('/process-youtube', requireAuth, async (req, res) => {
             console.log('YouTube transcript not available or empty, falling back to audio download.');
         } catch (captionError) {
             console.error('Failed to fetch YouTube transcript, falling back to audio download:', captionError.message || captionError);
-            
+
             // Se o erro for especificamente "Captions are disabled for this video", não é erro de servidor, apenas falta de legenda
             if (captionError.message && captionError.message.includes('Captions are disabled')) {
                 console.log('Captions disabled, proceeding to audio download.');
@@ -1666,7 +1670,7 @@ app.post('/process-youtube', requireAuth, async (req, res) => {
             path.join(__dirname, 'cookies.txt'),
             path.join(process.cwd(), 'cookies.txt')
         ];
-        
+
         let cookiesPath = null;
         for (const p of pathsToCheck) {
             if (fs.existsSync(p)) {
@@ -1691,9 +1695,9 @@ app.post('/process-youtube', requireAuth, async (req, res) => {
             } else {
                 metadataArgs.push('--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
             }
-            
+
             console.log(`Running yt-dlp metadata with args: ${JSON.stringify(metadataArgs)}`);
-            
+
             // Use execPromise instead of getVideoInfo to pass custom args like cookies
             const stdout = await ytDlpWrap.execPromise(metadataArgs);
             metadata = JSON.parse(stdout);
@@ -1704,24 +1708,24 @@ app.post('/process-youtube', requireAuth, async (req, res) => {
             // Improve error message for known YouTube blocks
             if (e.message.includes('Sign in to confirm') || e.message.includes('bot')) {
                 const cookieStatus = hasCookies ? '(Cookies foram detectados e usados, mas o YouTube ainda bloqueou. Verifique se o arquivo cookies.txt é válido e recente)' : '(Nenhum arquivo cookies.txt foi detectado no servidor)';
-                return res.status(400).json({ 
-                    error: `O YouTube bloqueou o download. ${cookieStatus}. Solução: Baixe o vídeo manualmente ou renove o arquivo cookies.txt.` 
+                return res.status(400).json({
+                    error: `O YouTube bloqueou o download. ${cookieStatus}. Solução: Baixe o vídeo manualmente ou renove o arquivo cookies.txt.`
                 });
             }
             if (e.message.includes('unsupported version of Python')) {
-                 return res.status(400).json({ 
-                    error: 'O vídeo não possui legendas automáticas e o servidor não suporta download de áudio (Python desatualizado). Solução: Baixe o áudio manualmente e use a opção "Upload de Arquivo".' 
+                return res.status(400).json({
+                    error: 'O vídeo não possui legendas automáticas e o servidor não suporta download de áudio (Python desatualizado). Solução: Baixe o áudio manualmente e use a opção "Upload de Arquivo".'
                 });
             }
             return res.status(400).json({ error: `Erro no processamento do vídeo: ${e.message}` });
         }
 
         if (metadata.duration > 21600) { // 6 hours
-        return res.status(400).json({ error: 'Video is too long (max 6 hours)' });
-    }
+            return res.status(400).json({ error: 'Video is too long (max 6 hours)' });
+        }
 
         const tempFilePath = path.join(__dirname, `temp_${Date.now()}.mp3`);
-        
+
         try {
             const downloadArgs = [
                 youtubeUrl,
@@ -1729,35 +1733,35 @@ app.post('/process-youtube', requireAuth, async (req, res) => {
                 '-o', tempFilePath,
                 '--force-overwrites'
             ];
-            
+
             if (hasCookies) {
                 downloadArgs.push('--cookies', cookiesPath);
             } else {
-                 downloadArgs.push('--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+                downloadArgs.push('--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
             }
 
             console.log('Starting yt-dlp download with args:', downloadArgs.join(' '));
             await ytDlpWrap.execPromise(downloadArgs);
             console.log('yt-dlp download finished successfully.');
         } catch (downloadError) {
-             console.error('yt-dlp download failed:', downloadError.message);
-             if (downloadError.message.includes('Sign in to confirm') || downloadError.message.includes('bot')) {
-                return res.status(400).json({ 
-                    error: 'O YouTube bloqueou o download automático deste vídeo. Solução: Baixe o vídeo manualmente ou configure o arquivo cookies.txt no servidor.' 
+            console.error('yt-dlp download failed:', downloadError.message);
+            if (downloadError.message.includes('Sign in to confirm') || downloadError.message.includes('bot')) {
+                return res.status(400).json({
+                    error: 'O YouTube bloqueou o download automático deste vídeo. Solução: Baixe o vídeo manualmente ou configure o arquivo cookies.txt no servidor.'
                 });
             }
             throw downloadError;
         }
 
         console.log('Download complete. Uploading to AssemblyAI...');
-        
+
         // Check if file exists and has size
         if (!fs.existsSync(tempFilePath) || fs.statSync(tempFilePath).size === 0) {
-             throw new Error('Download failed: Audio file is empty or missing.');
+            throw new Error('Download failed: Audio file is empty or missing.');
         }
 
         const fileStream = fs.createReadStream(tempFilePath);
-        
+
         const response = await axios.post('https://api.assemblyai.com/v2/upload', fileStream, {
             headers: {
                 'Authorization': apiKey,
@@ -1769,7 +1773,7 @@ app.post('/process-youtube', requireAuth, async (req, res) => {
         });
 
         fs.unlinkSync(tempFilePath);
-        
+
         // Return matching structure to what frontend expects
         // Frontend expects: { upload_url: ... } which is what response.data has
         res.json(response.data);
@@ -1790,7 +1794,7 @@ app.post('/ingest-session', requireAuth, async (req, res) => {
         if (!serviceClient) throw new Error('Service client not configured');
 
         if (!sessionId) return res.status(400).json({ error: 'Session ID required' });
-        
+
         await ingestSessionInternal(sessionId, serviceClient);
 
         res.json({ success: true });
@@ -2498,7 +2502,7 @@ app.post('/ask', requireAuth, async (req, res) => {
                 if (vereador?.biografia) fields.push(`Biografia: ${String(vereador.biografia).slice(0, 700)}`);
                 if (fields.length > 0) userContext = `=== PERFIL DO USUÁRIO LOGADO ===\n${fields.join('\n')}\n==============================\n\n`;
             }
-        } catch {}
+        } catch { }
         const recent = history ? history.slice(-4) : [];
         const buildStandalone = async (q, h) => {
             const text = h.length > 0 ? h.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n') : '';
@@ -2560,7 +2564,7 @@ app.post('/ask', requireAuth, async (req, res) => {
         }).map(d => ({ ...d, _final: 0.6 * (d.similarity || 0) + 0.4 * (d._lex / (maxLex || 1)) }));
         withScores.sort((a, b) => b._final - a._final);
         const prelim = withScores.slice(0, 25);
-        const rerankPrompt = `Consulta: ${standalone}\nItens:\n${prelim.map((d, i) => `#${i+1} ${d.id}: ${(d.content || '').slice(0, 400)}`).join('\n')}\nRetorne JSON com "order": [ids em ordem de relevância].`;
+        const rerankPrompt = `Consulta: ${standalone}\nItens:\n${prelim.map((d, i) => `#${i + 1} ${d.id}: ${(d.content || '').slice(0, 400)}`).join('\n')}\nRetorne JSON com "order": [ids em ordem de relevância].`;
         let orderIds = prelim.map(d => d.id);
         try {
             const rr = await openai.chat.completions.create({
@@ -2571,7 +2575,7 @@ app.post('/ask', requireAuth, async (req, res) => {
             });
             const parsed = JSON.parse(rr.choices[0].message.content);
             if (Array.isArray(parsed.order)) orderIds = parsed.order.filter(id => prelim.find(p => p.id === id));
-        } catch {}
+        } catch { }
         const reranked = orderIds.map(id => prelim.find(p => p.id === id)).filter(Boolean);
         const groupKey = (d) => `${d.metadata?.session_id || ''}::${d.metadata?.title || ''}::${d.metadata?.type || ''}`;
         const byParent = {};
@@ -2658,7 +2662,7 @@ app.post('/ask', requireAuth, async (req, res) => {
                 .select('nome, cidade, estado, site')
                 .eq('id', camaraId)
                 .single();
-            
+
             if (camaraData) {
                 camaraContext = `=== DADOS DA INSTITUIÇÃO ===\nNome: ${camaraData.nome}\nLocal: ${camaraData.cidade} - ${camaraData.estado}\nSite Oficial: ${camaraData.site || 'Não informado'}\n`;
                 if (camaraData.site) {
@@ -2694,7 +2698,7 @@ app.post('/ask', requireAuth, async (req, res) => {
                     }
                 }
             }
-        } catch {}
+        } catch { }
 
         const { data: recentSessions } = await supabase
             .from('sessions')
@@ -2702,20 +2706,20 @@ app.post('/ask', requireAuth, async (req, res) => {
             .eq('camara_id', camaraId)
             .order('date', { ascending: false })
             .limit(3);
-        
+
         if (recentSessions && recentSessions.length > 0) {
             let metaContext = "RESUMO RECENTE (METADADOS E DESTAQUES):\n";
             for (const s of recentSessions) {
                 const blocks = s.blocks || [];
                 // 1. Abertura/Cabeçalho
-                const aberturaBlock = blocks.find(b => 
+                const aberturaBlock = blocks.find(b =>
                     b.type === 'abertura' || b.type === 'cabecalho' || b.content.toLowerCase().includes('presidente')
                 );
                 const snippetAbertura = aberturaBlock ? aberturaBlock.content.slice(0, 300) : "Sem dados de abertura.";
 
                 // 2. Expediente ou Ordem do Dia (Busca por Projetos)
-                const projetosBlock = blocks.find(b => 
-                    (b.type === 'expediente' || b.type === 'ordem_dia') && 
+                const projetosBlock = blocks.find(b =>
+                    (b.type === 'expediente' || b.type === 'ordem_dia') &&
                     (b.content.toLowerCase().includes('projeto') || b.content.toLowerCase().includes('leitura'))
                 );
                 const snippetProjetos = projetosBlock ? projetosBlock.content.slice(0, 600) : "Sem destaques de projetos detectados nos metadados.";
@@ -2879,7 +2883,7 @@ app.post('/ask', requireAuth, async (req, res) => {
                 });
                 answer = completion2.choices[0].message.content;
             }
-        } catch {}
+        } catch { }
         res.json({ answer, sources });
 
     } catch (error) {
@@ -2919,14 +2923,14 @@ app.post('/ingest-law', requireAuth, upload.single('file'), async (req, res) => 
         if (chunks.length === 0) {
             // Check text length
             if (fullText.length < 100) {
-                 return res.status(400).json({ error: 'O PDF parece estar vazio ou é uma imagem escaneada (sem texto selecionável). Este sistema não faz OCR.' });
+                return res.status(400).json({ error: 'O PDF parece estar vazio ou é uma imagem escaneada (sem texto selecionável). Este sistema não faz OCR.' });
             } else {
-                 // Try to ingest as a single block if no articles found but text exists
-                 chunks.push({
+                // Try to ingest as a single block if no articles found but text exists
+                chunks.push({
                     content: fullText,
                     metadata: { source: title, reference: 'Texto Completo', type: 'full_text' }
-                 });
-                 console.log('No articles found, ingesting as single block.');
+                });
+                console.log('No articles found, ingesting as single block.');
             }
         }
 
@@ -2987,14 +2991,14 @@ app.get('/legal-documents', requireAuth, async (req, res) => {
         const { camaraId } = req.query;
         const authHeader = req.headers.authorization;
         if (!camaraId) return res.status(400).json({ error: 'camaraId required' });
-        
+
         const supabase = getSupabaseClient(authHeader);
         const { data, error } = await supabase
             .from('legal_documents')
             .select('*')
             .eq('camara_id', camaraId)
             .order('created_at', { ascending: false });
-            
+
         if (error) throw error;
         res.json({ documents: data });
     } catch (error) {
@@ -3009,15 +3013,15 @@ app.delete('/legal-documents/:id', requireAuth, async (req, res) => {
         const { id } = req.params;
         const authHeader = req.headers.authorization;
         const supabase = getSupabaseClient(authHeader);
-        
+
         // Delete embeddings first (cascade should handle this but explicit is safer if no cascade)
         await supabase.from('legal_embeddings').delete().eq('document_id', id);
-        
+
         const { error } = await supabase
             .from('legal_documents')
             .delete()
             .eq('id', id);
-            
+
         if (error) throw error;
         res.json({ success: true });
     } catch (error) {
@@ -3032,13 +3036,13 @@ app.get('/debug-legal-status', requireAuth, async (req, res) => {
         const { camaraId } = req.query;
         const authHeader = req.headers.authorization;
         const supabase = getSupabaseClient(authHeader);
-        
+
         // 1. Check Documents
         const { data: docs, error: docError } = await supabase
             .from('legal_documents')
             .select('id, title, created_at')
             .eq('camara_id', camaraId);
-            
+
         // 2. Check Embeddings Count
         const { count: embCount, error: embError } = await supabase
             .from('legal_embeddings')
@@ -3049,7 +3053,7 @@ app.get('/debug-legal-status', requireAuth, async (req, res) => {
         let rpcResult = 'Not tested';
         let rpcError = null;
         try {
-            const dummyVector = new Array(1536).fill(0.01); 
+            const dummyVector = new Array(1536).fill(0.01);
             const { data, error } = await supabase.rpc('match_legal_embeddings', {
                 query_embedding: dummyVector,
                 match_threshold: 0.0,
@@ -3103,11 +3107,11 @@ app.post('/analyze-proposal', requireAuth, async (req, res) => {
         const hyde = hydeComp.choices[0].message.content.trim();
         const e1 = await openai.embeddings.create({ model: 'text-embedding-3-small', input: standalone });
         const e2 = await openai.embeddings.create({ model: 'text-embedding-3-small', input: hyde });
-        
+
         // Lowered threshold from 0.25 to 0.15 to improve recall
         const m1 = await supabase.rpc('match_legal_embeddings', { query_embedding: e1.data[0].embedding, match_threshold: 0.15, match_count: 30, filter_camara_id: camaraId });
         const m2 = await supabase.rpc('match_legal_embeddings', { query_embedding: e2.data[0].embedding, match_threshold: 0.15, match_count: 30, filter_camara_id: camaraId });
-        
+
         if (m1.error) console.error('RPC Error m1:', m1.error);
 
         const merged = {};
@@ -3132,7 +3136,7 @@ app.post('/analyze-proposal', requireAuth, async (req, res) => {
         }).map(d => ({ ...d, _final: 0.6 * (d.similarity || 0) + 0.4 * (d._lex / (maxLex || 1)) }));
         withScores.sort((a, b) => b._final - a._final);
         const prelim = withScores.slice(0, 25);
-        const rerankPrompt = `Consulta: ${standalone}\nItens:\n${prelim.map((d, i) => `#${i+1} ${d.id}: ${d.document_title} | ${(d.content || '').slice(0, 400)}`).join('\n')}\nRetorne JSON com "order": [ids em ordem de relevância].`;
+        const rerankPrompt = `Consulta: ${standalone}\nItens:\n${prelim.map((d, i) => `#${i + 1} ${d.id}: ${d.document_title} | ${(d.content || '').slice(0, 400)}`).join('\n')}\nRetorne JSON com "order": [ids em ordem de relevância].`;
         let orderIds = prelim.map(d => d.id);
         try {
             const rrk = await openai.chat.completions.create({
@@ -3143,7 +3147,7 @@ app.post('/analyze-proposal', requireAuth, async (req, res) => {
             });
             const parsed = JSON.parse(rrk.choices[0].message.content);
             if (Array.isArray(parsed.order)) orderIds = parsed.order.filter(id => prelim.find(p => p.id === id));
-        } catch {}
+        } catch { }
         const reranked = orderIds.map(id => prelim.find(p => p.id === id)).filter(Boolean);
         const groupKey = (d) => `${d.document_title || d.metadata?.source || ''}::${d.metadata?.reference || ''}`;
         const byParent = {};
@@ -3180,17 +3184,17 @@ app.post('/analyze-proposal', requireAuth, async (req, res) => {
             }
         }
         if (!context) {
-             const { count } = await supabase.from('legal_embeddings').select('*', { count: 'exact', head: true }).eq('camara_id', camaraId);
-             
-             if (count === 0) {
-                 context = "ERRO: Não há documentos legais indexados para esta câmara no banco de dados. Por favor, faça o upload da Lei Orgânica em Configurações > Base Legal.";
-             } else {
-                 if (m1.error) {
-                     context = `ERRO TÉCNICO NA BUSCA: ${JSON.stringify(m1.error)}. Verifique se a função match_legal_embeddings está atualizada no Supabase.`;
-                 } else {
-                     context = `Nenhuma lei encontrada com similaridade suficiente (Total de fragmentos no banco: ${count}).`;
-                 }
-             }
+            const { count } = await supabase.from('legal_embeddings').select('*', { count: 'exact', head: true }).eq('camara_id', camaraId);
+
+            if (count === 0) {
+                context = "ERRO: Não há documentos legais indexados para esta câmara no banco de dados. Por favor, faça o upload da Lei Orgânica em Configurações > Base Legal.";
+            } else {
+                if (m1.error) {
+                    context = `ERRO TÉCNICO NA BUSCA: ${JSON.stringify(m1.error)}. Verifique se a função match_legal_embeddings está atualizada no Supabase.`;
+                } else {
+                    context = `Nenhuma lei encontrada com similaridade suficiente (Total de fragmentos no banco: ${count}).`;
+                }
+            }
         }
         const completion = await openai.chat.completions.create({
             model: 'gpt-4o',
@@ -3257,7 +3261,7 @@ app.post('/analyze-proposal', requireAuth, async (req, res) => {
                 });
                 analysis = completion2.choices[0].message.content;
             }
-        } catch {}
+        } catch { }
         res.json({ analysis, sources });
 
     } catch (error) {
@@ -3273,7 +3277,7 @@ app.post('/generate-law', requireAuth, async (req, res) => {
         // Auth check handled by middleware
         // const authHeader = req.headers.authorization;
         // if (!authHeader) ...
-        
+
         // Use req.user from middleware
         const user = req.user;
         // const supabase = getSupabaseClient(authHeader);
@@ -3301,7 +3305,7 @@ app.post('/generate-law', requireAuth, async (req, res) => {
             profileData?.camara?.nome
                 ? String(profileData.camara.nome).replace('Câmara Municipal de ', '')
                 : (camaraCity || 'Município');
-        
+
         // Date handling
         const today = new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
         const currentYear = new Date().getFullYear();
@@ -3309,7 +3313,7 @@ app.post('/generate-law', requireAuth, async (req, res) => {
         // 0. Fetch Legal Context (if available)
         let legalContext = "";
         const targetCamaraId = camaraId || profileData?.camara_id;
-        
+
         if (targetCamaraId) {
             try {
                 const queryText = `${object} ${objectives}`;
@@ -3321,14 +3325,14 @@ app.post('/generate-law', requireAuth, async (req, res) => {
 
                 const { data: legalMatches, error: matchError } = await supabase.rpc('match_legal_embeddings', {
                     query_embedding: embedding,
-                    match_threshold: 0.15, 
+                    match_threshold: 0.15,
                     match_count: 10,
                     filter_camara_id: targetCamaraId
                 });
 
                 if (!matchError && legalMatches && legalMatches.length > 0) {
-                     const uniqueContent = [...new Set(legalMatches.map(m => `[Fonte: ${m.metadata?.source || 'Lei Municipal'}]\n${m.content}`))].join('\n\n');
-                     legalContext = `CONTEXTO LEGAL MUNICIPAL (LEI ORGÂNICA/REGIMENTO) - OBRIGATÓRIO RESPEITAR:\n${uniqueContent}\n\n`;
+                    const uniqueContent = [...new Set(legalMatches.map(m => `[Fonte: ${m.metadata?.source || 'Lei Municipal'}]\n${m.content}`))].join('\n\n');
+                    legalContext = `CONTEXTO LEGAL MUNICIPAL (LEI ORGÂNICA/REGIMENTO) - OBRIGATÓRIO RESPEITAR:\n${uniqueContent}\n\n`;
                 }
             } catch (e) {
                 console.error('Error fetching legal context for bill:', e);
@@ -3387,7 +3391,7 @@ app.post('/generate-law', requireAuth, async (req, res) => {
                         spacing: { after: 200 }
                     }),
                     new Paragraph({
-                        text: lawText.replace(/\n/g, '\n'), 
+                        text: lawText.replace(/\n/g, '\n'),
                         alignment: AlignmentType.JUSTIFIED
                     })
                 ],
@@ -3395,10 +3399,10 @@ app.post('/generate-law', requireAuth, async (req, res) => {
         });
 
         const b64 = await Packer.toBase64String(doc);
-        
-        res.json({ 
-            text: lawText, 
-            docx: b64 
+
+        res.json({
+            text: lawText,
+            docx: b64
         });
 
     } catch (error) {
@@ -3425,11 +3429,11 @@ const cleanupStorage = async () => {
         // Since list() isn't recursive by default, we assume structure is 'sessionId/filename' or just 'filename'
         // We'll list root first. If folders used, we need to traverse.
         // Current implementation uses 'userId/filename' or 'sessionId/filename'.
-        
+
         // Strategy: List all files flat if possible or iterate known folders.
         // Listing ALL files in a bucket efficiently is tricky without recursion.
         // For simplicity in this v1, we'll assume a flat structure or list folders first.
-        
+
         // Actually, Supabase list() returns folders too.
         const { data: rootItems, error: listError } = await serviceClient.storage
             .from('session_audio')
@@ -3444,7 +3448,7 @@ const cleanupStorage = async () => {
         const processItems = async (items, pathPrefix = '') => {
             for (const item of items) {
                 const fullPath = pathPrefix ? `${pathPrefix}/${item.name}` : item.name;
-                
+
                 if (item.id === null) {
                     // It's a folder, dive in
                     const { data: subItems } = await serviceClient.storage
@@ -3465,7 +3469,7 @@ const cleanupStorage = async () => {
 
         if (filesToDelete.length > 0) {
             console.log(`Deleting ${filesToDelete.length} old audio files...`);
-            
+
             // Delete from Storage
             const { error: deleteError } = await serviceClient.storage
                 .from('session_audio')
@@ -3478,7 +3482,7 @@ const cleanupStorage = async () => {
             // This is heavy if many files. Maybe skip or do batch updates.
             // For now, let's just log. The frontend handles 404s on audio gently?
             // Or better: set audio_url = null where audio_url contains these filenames
-            
+
             // Let's try to update sessions. This requires mapping file URL to session.
             // A bit complex to do reliably without checking every session.
             // We'll skip DB update for now to avoid performance hits, 
@@ -3504,15 +3508,15 @@ app.post('/admin/cleanup-storage', async (req, res) => {
     try {
         const authHeader = req.headers.authorization;
         if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
-        
+
         // Check if super_admin
         const supabase = getSupabaseClient(authHeader);
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return res.status(401).json({ error: 'Unauthorized' });
-        
+
         // Ideally verify role here... assuming valid token allows trigger for now or rely on RLS
         // But this is an admin task.
-        
+
         const result = await cleanupStorage();
         res.json(result);
 
@@ -3532,7 +3536,7 @@ app.post('/admin/delete-session', async (req, res) => {
 
         const supabase = getSupabaseClient(authHeader);
         const { data: { user } } = await supabase.auth.getUser();
-        
+
         if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
         // Verify Super Admin Role
@@ -3543,7 +3547,7 @@ app.post('/admin/delete-session', async (req, res) => {
 
         if (rolesError) throw rolesError;
         const roles = (rolesData || []).map(r => r.role);
-        
+
         if (!roles.includes('super_admin')) {
             return res.status(403).json({ error: 'Forbidden: Only super admins can delete sessions.' });
         }
@@ -3605,7 +3609,7 @@ app.post('/admin/delete-session', async (req, res) => {
             .from('session_embeddings')
             .delete()
             .eq('session_id', sessionId);
-        
+
         if (embedError) console.error('Error deleting embeddings:', embedError);
 
         // 3. Delete Session Record
@@ -3652,10 +3656,10 @@ app.post('/ouvidoria/whatsapp/start', requireAuth, async (req, res) => {
         if (status.ready) {
             return res.json({ success: true, message: 'Already connected' });
         }
-        
+
         // Start process async (don't wait for QR)
         initWhatsApp().catch(err => console.error('Manual start error:', err));
-        
+
         res.json({ success: true, message: 'Starting WhatsApp client...' });
     } catch (error) {
         res.status(500).json({ error: 'Start failed' });
@@ -3675,31 +3679,31 @@ app.delete('/admin/camaras/:id', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
         const authHeader = req.headers.authorization;
-        
+
         // 1. Verify Super Admin (via middleware user is already attached to req.user usually, but let's be safe with supabase check)
         const supabase = getSupabaseClient(authHeader);
         const { data: { user } } = await supabase.auth.getUser();
-        
+
         if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
         const { data: rolesData, error: rolesError } = await supabase
             .from('user_roles')
             .select('role')
             .eq('user_id', user.id);
-            
+
         if (rolesError) throw rolesError;
         const roles = (rolesData || []).map(r => r.role);
-        
+
         if (!roles.includes('super_admin')) {
             return res.status(403).json({ error: 'Forbidden: Only super admins can delete camaras.' });
         }
 
         const serviceClient = getServiceSupabase();
-        
+
         // 2. Delete (using Service Role to bypass RLS)
         const { error } = await serviceClient.from('camaras').delete().eq('id', id);
         if (error) throw error;
-        
+
         res.json({ success: true });
     } catch (error) {
         console.error('Delete Camara Error:', error);
@@ -3717,19 +3721,19 @@ app.post('/update-profile', requireAuth, async (req, res) => {
         // Verify that the requester is the user being updated or an admin
         const supabase = getSupabaseClient(authHeader);
         const { data: { user } } = await supabase.auth.getUser();
-        
+
         if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
         if (user.id !== userId) {
-             // Check if super_admin
-             const { data: rolesData } = await supabase
+            // Check if super_admin
+            const { data: rolesData } = await supabase
                 .from('user_roles')
                 .select('role')
                 .eq('user_id', user.id);
-             const roles = (rolesData || []).map(r => r.role);
-             if (!roles.includes('super_admin') && !roles.includes('admin')) {
-                 return res.status(403).json({ error: 'Forbidden: You can only update your own profile.' });
-             }
+            const roles = (rolesData || []).map(r => r.role);
+            if (!roles.includes('super_admin') && !roles.includes('admin')) {
+                return res.status(403).json({ error: 'Forbidden: You can only update your own profile.' });
+            }
         }
 
         const serviceClient = getServiceSupabase();
@@ -3743,8 +3747,8 @@ app.post('/update-profile', requireAuth, async (req, res) => {
             .maybeSingle();
 
         if (checkError) {
-             console.error('Check Profile Error:', checkError);
-             throw checkError;
+            console.error('Check Profile Error:', checkError);
+            throw checkError;
         }
 
         let data, error;
@@ -3768,8 +3772,8 @@ app.post('/update-profile', requireAuth, async (req, res) => {
                 .insert({ ...updates, user_id: userId })
                 .select()
                 .single();
-             data = result.data;
-             error = result.error;
+            data = result.data;
+            error = result.error;
         }
 
         if (error) throw error;
@@ -3786,7 +3790,7 @@ app.post('/update-profile', requireAuth, async (req, res) => {
 app.post('/save-session', requireAuth, async (req, res) => {
     try {
         const { userId, title, date, status, duration, audio_url, youtube_url, transcript, blocks, camara_id } = req.body;
-        
+
         // Verifica se o usuário que faz a requisição é o mesmo do userId ou admin
         const authHeader = req.headers.authorization;
         const supabase = getSupabaseClient(authHeader);
@@ -3796,28 +3800,28 @@ app.post('/save-session', requireAuth, async (req, res) => {
 
         // Validação básica (opcional, pode ser relaxada se admin estiver salvando para outro)
         if (user.id !== userId) {
-             // Opcional: verificar role de admin se necessário
-             // Por enquanto, vamos assumir que o frontend envia o userId correto do usuário logado
-             // ou implementar verificação de admin aqui se for multi-tenant estrito
+            // Opcional: verificar role de admin se necessário
+            // Por enquanto, vamos assumir que o frontend envia o userId correto do usuário logado
+            // ou implementar verificação de admin aqui se for multi-tenant estrito
         }
 
         const serviceClient = getServiceSupabase();
-        
+
         // Verifica se já existe sessão com mesmo título/data/user (lógica do frontend movida pra cá)
         let query = serviceClient
-          .from('sessions')
-          .select('id')
-          .eq('title', title)
-          .eq('date', date)
-          .eq('user_id', userId)
-          .limit(1);
+            .from('sessions')
+            .select('id')
+            .eq('title', title)
+            .eq('date', date)
+            .eq('user_id', userId)
+            .limit(1);
 
         if (camara_id) {
-          query = query.eq('camara_id', camara_id);
+            query = query.eq('camara_id', camara_id);
         }
 
         const { data: existingList, error: existingError } = await query;
-        
+
         if (existingError) console.error('Error checking existing session:', existingError);
 
         const payload = {
@@ -3837,23 +3841,23 @@ app.post('/save-session', requireAuth, async (req, res) => {
         let error;
 
         if (existingList && existingList.length > 0) {
-             const existingId = existingList[0].id;
-             const updateResult = await serviceClient
+            const existingId = existingList[0].id;
+            const updateResult = await serviceClient
                 .from('sessions')
                 .update(payload)
                 .eq('id', existingId)
                 .select()
                 .single();
-             sessionData = updateResult.data;
-             error = updateResult.error;
+            sessionData = updateResult.data;
+            error = updateResult.error;
         } else {
-             const insertResult = await serviceClient
+            const insertResult = await serviceClient
                 .from('sessions')
                 .insert(payload)
                 .select()
                 .single();
-             sessionData = insertResult.data;
-             error = insertResult.error;
+            sessionData = insertResult.data;
+            error = insertResult.error;
         }
 
         if (error) throw error;
@@ -3889,9 +3893,9 @@ app.post('/generate-minutes-mcp', requireAuth, async (req, res) => {
             user
         };
 
-        const result = await executeTool('generate_minutes', { 
-            session_id: sessionId, 
-            minutes_type: minutesType || 'ordinaria' 
+        const result = await executeTool('generate_minutes', {
+            session_id: sessionId,
+            minutes_type: minutesType || 'ordinaria'
         }, context);
 
         res.json(result);
@@ -3916,7 +3920,7 @@ console.log(`Serving static files from: ${distPath}`);
 app.use(express.static(distPath));
 
 app.get(/.*/, (req, res) => {
-  res.sendFile(path.join(distPath, 'index.html'));
+    res.sendFile(path.join(distPath, 'index.html'));
 });
 
 ensureBinary(ytDlpBinaryPath).catch(err => {
