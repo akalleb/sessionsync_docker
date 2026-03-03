@@ -2838,26 +2838,55 @@ setupMcpServer(app, { getSupabaseClient, getServiceSupabase, openai });
 // 17. Generate Minutes via MCP
 app.post('/generate-minutes-mcp', requireAuth, async (req, res) => {
     try {
-        const { sessionId, minutesType } = req.body;
+        const { sessionId } = req.body;
         if (!sessionId) return res.status(400).json({ error: 'Session ID required' });
 
         const authHeader = req.headers.authorization;
         const supabase = getSupabaseClient(authHeader);
-        const { data: { user } } = await supabase.auth.getUser();
 
-        const context = {
-            supabase,
-            serviceSupabase: getServiceSupabase(),
-            openai,
-            user
-        };
+        const { data: session, error: sessionError } = await supabase
+            .from('sessions')
+            .select('id, title, date, blocks')
+            .eq('id', sessionId)
+            .single();
 
-        const result = await executeTool('generate_minutes', {
-            session_id: sessionId,
-            minutes_type: minutesType || 'ordinaria'
-        }, context);
+        if (sessionError) {
+            console.error('Generate Minutes Error - fetch session:', sessionError);
+            return res.status(500).json({ error: 'Erro ao buscar sessão' });
+        }
 
-        res.json(result);
+        const blocks = Array.isArray(session.blocks) ? session.blocks : [];
+        if (blocks.length === 0) {
+            return res.status(400).json({ error: 'Sessão não possui blocos para gerar a ata.' });
+        }
+
+        const sortedBlocks = [...blocks].sort((a, b) => {
+            const ao = typeof a.order === 'number' ? a.order : 0;
+            const bo = typeof b.order === 'number' ? b.order : 0;
+            return ao - bo;
+        });
+
+        const minutesText = sortedBlocks
+            .map((b) => {
+                const title = b.title ? `## ${b.title}\n\n` : '';
+                const content = (b.summary || b.content || '').trim();
+                if (!title && !content) return '';
+                return `${title}${content}`;
+            })
+            .filter(Boolean)
+            .join('\n\n');
+
+        const { error: updateError } = await supabase
+            .from('sessions')
+            .update({ final_minutes: minutesText })
+            .eq('id', sessionId);
+
+        if (updateError) {
+            console.error('Generate Minutes Error - update session:', updateError);
+            return res.status(500).json({ error: 'Erro ao salvar ata final' });
+        }
+
+        res.json({ minutes_text: minutesText });
 
     } catch (error) {
         console.error('Generate Minutes MCP Error:', error);

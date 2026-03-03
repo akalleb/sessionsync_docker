@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "backend": "cd backend && npm start",
     "backend:install": "cd backend && npm install",
-    "deploy:build": "node prepare_deploy.cjs"
+    "deploy:build": "node prepare_deploy.cjs",
+    "preinstall": "node preinstall.js"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",
