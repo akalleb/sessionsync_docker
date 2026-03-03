@@ -1,3 +1,2 @@
-2026/02/28-10:16:27.004 6a68 Reusing MANIFEST F:\python\sessionsync_docker\backend\workers\ouvidoria\auth_info\camara_a5dfbede-406c-4f83-a9f5-331b33be63b7\Default\Sync Data\LevelDB/MANIFEST-000001
-2026/02/28-10:16:27.009 6a68 Recovering log #3
-2026/02/28-10:16:27.009 6a68 Reusing old log F:\python\sessionsync_docker\backend\workers\ouvidoria\auth_info\camara_a5dfbede-406c-4f83-a9f5-331b33be63b7\Default\Sync Data\LevelDB/000003.log 
+2026/03/02-19:52:29.530 1b74 Creating DB F:\python\sessionsync_docker\backend\workers\ouvidoria\auth_info\camara_a5dfbede-406c-4f83-a9f5-331b33be63b7\Default\Sync Data\LevelDB since it was missing.
+2026/03/02-19:52:29.581 1b74 Reusing MANIFEST F:\python\sessionsync_docker\backend\workers\ouvidoria\auth_info\camara_a5dfbede-406c-4f83-a9f5-331b33be63b7\Default\Sync Data\LevelDB/MANIFEST-000001

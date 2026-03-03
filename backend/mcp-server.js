@@ -43,6 +43,50 @@ const TOOLS = {
       required: ["camara_id", "query"]
     }
   },
+  list_councilors: {
+    description: "Lista os vereadores cadastrados de uma câmara, incluindo partido e cargo.",
+    parameters: {
+      type: "object",
+      properties: {
+        camara_id: { type: "string" }
+      },
+      required: ["camara_id"]
+    }
+  },
+  get_councilor_details: {
+    description: "Obtém detalhes específicos de um vereador pelo seu ID.",
+    parameters: {
+      type: "object",
+      properties: {
+        councilor_id: { type: "string" }
+      },
+      required: ["councilor_id"]
+    }
+  },
+  list_sessions: {
+    description: "Lista sessões recentes, permitindo filtrar por data ou tipo.",
+    parameters: {
+      type: "object",
+      properties: {
+        camara_id: { type: "string" },
+        limit: { type: "number", description: "Limite de registros (padrão 10)" },
+        offset: { type: "number", description: "Pular registros (padrão 0)" }
+      },
+      required: ["camara_id"]
+    }
+  },
+  search_sessions: {
+    description: "Busca textual em transcrições, resumos e títulos de sessões.",
+    parameters: {
+      type: "object",
+      properties: {
+        camara_id: { type: "string" },
+        query: { type: "string" },
+        limit: { type: "number" }
+      },
+      required: ["camara_id", "query"]
+    }
+  },
   generate_minutes: {
     description: "Gera o texto completo de uma ata legislativa com base nos dados da sessão e contexto.",
     parameters: {
@@ -63,7 +107,7 @@ const TOOL_IMPLEMENTATIONS = {
     // Validate access via RLS (handled by the passed supabase client) or explicit check
     const { data, error } = await supabase
       .from('sessions')
-      .select('id, title, date, status, duration, transcript, blocks, final_minutes, camara_id, tipo, user_id')
+      .select('id, title, date, status, duration, transcript, blocks, final_minutes, camara_id, user_id')
       .eq('id', session_id)
       .single();
 
@@ -76,16 +120,14 @@ const TOOL_IMPLEMENTATIONS = {
   get_session_structure: async ({ session_id }, { supabase }) => {
     const { data, error } = await supabase
       .from('sessions')
-      .select('title, tipo')
+      .select('title')
       .eq('id', session_id)
       .single();
 
     if (error) throw new Error(`Erro ao buscar sessão: ${error.message}`);
 
     let tipo = 'ordinaria';
-    if (data.tipo) {
-      tipo = data.tipo.toLowerCase();
-    } else if (data.title) {
+    if (data && data.title) {
       const titleLower = data.title.toLowerCase();
       if (titleLower.includes('solene')) tipo = 'solene';
       else if (titleLower.includes('extraordinária') || titleLower.includes('extraordinaria')) tipo = 'extraordinaria';
@@ -149,6 +191,51 @@ const TOOL_IMPLEMENTATIONS = {
     }));
   },
 
+  list_councilors: async ({ camara_id }, { supabase }) => {
+    const { data, error } = await supabase
+      .from('vereadores')
+      .select('*, partidos(sigla, nome)')
+      .eq('camara_id', camara_id);
+
+    if (error) throw new Error(`Erro ao listar vereadores: ${error.message}`);
+    return data;
+  },
+
+  get_councilor_details: async ({ councilor_id }, { supabase }) => {
+    const { data, error } = await supabase
+      .from('vereadores')
+      .select('*, partidos(sigla, nome), profiles(preferences)')
+      .eq('id', councilor_id)
+      .single();
+
+    if (error) throw new Error(`Erro ao buscar vereador: ${error.message}`);
+    return data;
+  },
+
+  list_sessions: async ({ camara_id, limit = 10, offset = 0 }, { supabase }) => {
+    const { data, error } = await supabase
+      .from('sessions')
+      .select('id, title, date, status')
+      .eq('camara_id', camara_id)
+      .order('date', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) throw new Error(`Erro ao listar sessões: ${error.message}`);
+    return data;
+  },
+
+  search_sessions: async ({ camara_id, query, limit = 5 }, { supabase }) => {
+    const { data, error } = await supabase
+      .from('sessions')
+      .select('id, title, date')
+      .eq('camara_id', camara_id)
+      .or(`title.ilike.%${query}%,transcript.ilike.%${query}%,final_minutes.ilike.%${query}%`)
+      .limit(limit);
+
+    if (error) throw new Error(`Erro na busca: ${error.message}`);
+    return data;
+  },
+
   generate_minutes: async ({ session_id, minutes_type, style_options }, context) => {
     const { supabase, serviceSupabase, openai } = context;
 
@@ -174,10 +261,10 @@ const TOOL_IMPLEMENTATIONS = {
     }
 
     // 5. Build Prompt
-    const systemPrompt = `Você é um assistente legislativo especializado em redigir atas oficiais.
-Sua tarefa é gerar uma ata completa e formal para uma sessão ${minutes_type.toUpperCase()}.
-Use linguagem formal, culta e impessoal.
-Siga a estrutura fornecida.`;
+    const systemPrompt = `Você é um assistente legislativo especializado em redigir atas oficiais de Câmaras Municipais.
+Sua tarefa é gerar uma ata completa, formal e bem estruturada para uma sessão ${minutes_type.toUpperCase()}.
+Use linguagem culta, impessoal e estritamente fiel aos fatos apresentados nos blocos.
+Siga a estrutura fornecida e as regras de redação oficial.`;
 
     const userPrompt = `
 DADOS DA CÂMARA:
@@ -192,23 +279,28 @@ Duração: ${session.duration || 'Não informada'}
 ESTRUTURA SUGERIDA:
 ${structure.estrutura_sugerida}
 
-BLOCOS DA TRANSCRIÇÃO (Use estes conteúdos para preencher a ata):
+BLOCOS DA TRANSCRIÇÃO (Matéria-prima):
 ${JSON.stringify(session.blocks.map(b => ({
-      tipo: b.type,
-      titulo: b.title,
-      orador: b.speaker,
-      conteudo: b.summary || b.content
-    })), null, 2)}
+    tipo: b.type, // (abertura, expediente, ordem_dia, votacao, etc.)
+    titulo: b.title,
+    orador: b.speaker,
+    conteudo: b.summary || b.content // Prefira o resumo se existir
+})), null, 2)}
 
-CONTEXTO LEGAL (Use se relevante):
+CONTEXTO LEGAL (Use se relevante para fundamentar ritos):
 ${legalContext.map(l => `- ${l.source} (${l.reference}): ${l.content}`).join('\n')}
 
-INSTRUÇÕES:
-- Redija a ata completa.
-- Se houver oradores identificados, cite-os corretamente.
-- Para votações, mencione o resultado se estiver claro no texto.
-- Não invente informações não presentes nos blocos.
-- Use marcadores Markdown (# para títulos, ## para seções).
+REGRAS DE REDAÇÃO:
+1. Cabeçalho: Use o nome da câmara e dados da sessão.
+2. Abertura: Mencione quem presidiu e a verificação de quórum (se houver).
+3. Expediente: Liste leituras de ofícios, projetos e requerimentos de forma resumida.
+4. Ordem do Dia: Detalhe as discussões e, PRINCIPALMENTE, o resultado das votações (Aprovado/Rejeitado/Adiado).
+5. Explicações Pessoais/Grande Expediente: Resuma os discursos dos vereadores, citando o nome de cada orador.
+6. Encerramento: Mencione o horário e a convocação para a próxima sessão.
+7. Estilo: Use marcadores Markdown (# para Títulos, ## para Seções, **negrito** para destaques).
+8. Fidelidade: Não invente informações. Se algo não foi dito, não mencione.
+
+Gere a ata completa agora:
 `;
 
     // 6. Call LLM

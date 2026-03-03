@@ -48,15 +48,60 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (data) {
         setProfile(data);
-      } else {
-        console.warn('User has no profile. Signing out to prevent loop.');
-        await supabase.auth.signOut();
-        setProfile(null);
-        setVereador(null);
-        setRoles([]);
-        setUser(null);
-        setSession(null);
+        return;
       }
+
+      const { data: roleData, error: roleError } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', userId);
+
+      if (roleError) {
+        console.error('Error fetching roles for missing profile:', roleError);
+        return;
+      }
+
+      const isSuperAdmin = roleData?.some(r => r.role === 'super_admin');
+
+      if (isSuperAdmin) {
+        const { data: userData, error: userError } = await supabase.auth.getUser();
+        if (userError || !userData.user) {
+          console.error('Error fetching auth user for profile creation:', userError);
+          return;
+        }
+
+        const authUser = userData.user;
+        const nome =
+          (authUser.user_metadata as { nome?: string } | null | undefined)?.nome ||
+          authUser.email ||
+          'Administrador';
+
+        const { data: createdProfile, error: createError } = await supabase
+          .from('profiles')
+          .insert({
+            user_id: userId,
+            nome,
+            ativo: true,
+          })
+          .select('*, camara:camaras(*)')
+          .single();
+
+        if (createError) {
+          console.error('Error auto-creating profile for super admin:', createError);
+          return;
+        }
+
+        setProfile(createdProfile as Profile);
+        return;
+      }
+
+      console.warn('User has no profile and is not super admin. Signing out to prevent loop.');
+      await supabase.auth.signOut();
+      setProfile(null);
+      setVereador(null);
+      setRoles([]);
+      setUser(null);
+      setSession(null);
     } catch (err) {
       console.error('Unexpected error fetching profile:', err);
     }

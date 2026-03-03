@@ -1,10 +1,10 @@
 const buildCabecalhoPrompt = (src) => {
-    const exemplo = 
+    const exemplo =
         'ATA DA 1ª REUNIÃO DO 1º PERÍODO DA 1ª SESSÃO LEGISLATIVA DA 21ª LEGISLATURA ' +
         'DA CÂMARA MUNICIPAL DE ANGICOS/RN, REALIZADA NO DIA 10 DE OUTUBRO DE 2023.\n' +
         'SOB A PRESIDÊNCIA DOS SENHORES VEREADORES: MARCOS ANTONIO CRUZ ARAÚJO, JOSÉ MARIO SOARES FILHO.\n' +
         'ÀS 10:00, PRESENTES OS SENHORES VEREADORES: LISTA COMPLETA DE PRESENTES. CONSULTADO O LIVRO DE PRESENÇA DOS SENHORES VEREADORES, QUE ACUSA O COMPARECIMENTO DE 7 VEREADORES, FOI ABERTA A SESSÃO. (Ausentes: LISTA DE AUSENTES).';
-    
+
     return `Gere o parágrafo de cabeçalho da ATA FINAL do bloco "Cabeçalho".
 Texto 100% formal, em português, sem resumir nem cortar informações relevantes.
 
@@ -175,17 +175,80 @@ INSTRUÇÕES DO USUÁRIO:
 `;
 };
 
+const buildOrdemDiaItemPrompt = (src) => {
+    return `Resuma este item específico da Ordem do Dia de forma detalhada.
+Inclua:
+- Tipo e número da matéria (Projeto de Lei, Requerimento, etc.)
+- Ementa/assunto
+- Autor(a)
+- Discussão relevante (quem falou e o que disse)
+- Resultado da votação (se houve)
+
+RETORNE SOMENTE JSON VÁLIDO: {"texto": "..."}.
+
+BLOCO-FONTE:
+${src || ''}
+
+INSTRUÇÕES DO USUÁRIO:
+`;
+};
+
+const buildApartesPrompt = (src) => {
+    return `Registre DETALHADAMENTE os apartes (interrupções) ocorridos neste trecho.
+Formato OBRIGATÓRIO:
+    • APARTE DO VEREADOR [NOME]:
+        ◦ [Conteúdo detalhado do aparte]
+        ◦ [Resposta do orador original, se houver]
+
+Regras:
+- Cite TODOS os apartes na ordem em que ocorreram.
+- Inclua quem foi interrompido e o contexto da interrupção.
+- Mantenha o tom formal.
+
+RETORNE SOMENTE JSON VÁLIDO: {"texto": "..."}.
+
+BLOCO-FONTE:
+${src || ''}
+
+INSTRUÇÕES DO USUÁRIO:
+`;
+};
+
+const buildIntervaloPrompt = (src) => {
+    return `Registre a suspensão/intervalo da sessão.
+Inclua: motivo da suspensão, horário (se informado), e horário de retomada dos trabalhos.
+Seja breve e formal.
+
+RETORNE SOMENTE JSON VÁLIDO: {"texto": "..."}.
+
+BLOCO-FONTE:
+${src || ''}
+
+INSTRUÇÕES DO USUÁRIO:
+`;
+};
+
 const PROMPTS = {
-  cabecalho: buildCabecalhoPrompt,
-  abertura: buildAberturaPrompt,
-  expediente: buildExpedientePrompt,
-  ordem_dia: buildOrdemDiaPrompt,
-  discussao: buildDiscussaoPautaPrompt,
-  votacao: buildVotacoesPrompt,
-  explicacoes_pessoais: buildPronunciamentosPrompt,
-  comunicacoes: buildPronunciamentosPrompt,
-  encerramento: buildEncerramentoPrompt,
-  default: (src) => `Resuma o seguinte texto de uma sessão parlamentar. 
+    // Legacy / existing types
+    cabecalho: buildCabecalhoPrompt,
+    abertura: buildAberturaPrompt,
+    expediente: buildExpedientePrompt,
+    ordem_dia: buildOrdemDiaPrompt,
+    discussao: buildDiscussaoPautaPrompt,
+    votacao: buildVotacoesPrompt,
+    explicacoes_pessoais: buildPronunciamentosPrompt,
+    comunicacoes: buildPronunciamentosPrompt,
+    encerramento: buildEncerramentoPrompt,
+    verificacao_quorum: buildAberturaPrompt,
+    leitura_ata: buildAberturaPrompt,
+    // New types (aliases mapping to existing or new builders)
+    pequeno_expediente: buildExpedientePrompt,
+    grande_expediente: buildPronunciamentosPrompt,
+    ordem_dia_item: buildOrdemDiaItemPrompt,
+    apartes: buildApartesPrompt,
+    intervalo: buildIntervaloPrompt,
+    // Fallback
+    default: (src) => `Resuma o seguinte texto de uma sessão parlamentar. 
                 Seja conciso, capture os pontos principais, decisões e nomes citados.
                 Mantenha um tom formal.
                 
@@ -201,5 +264,8 @@ module.exports = {
     buildDiscussaoPautaPrompt,
     buildVotacoesPrompt,
     buildPronunciamentosPrompt,
-    buildEncerramentoPrompt
+    buildEncerramentoPrompt,
+    buildOrdemDiaItemPrompt,
+    buildApartesPrompt,
+    buildIntervaloPrompt
 };

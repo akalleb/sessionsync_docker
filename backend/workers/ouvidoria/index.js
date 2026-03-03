@@ -52,6 +52,10 @@ const s3Client = new S3Client({
 const activeClients = new Map();
 // Cache temporário para o QR Code (camaraId -> { qr: string, timestamp: number })
 const qrCodes = new Map();
+// Contador de tentativas de QR por câmara (camaraId -> number)
+const qrAttempts = new Map();
+// Flag de exaustão de QR: se true, o worker não ficará tentando infinitamente
+const qrExhausted = new Set();
 
 // ==========================================
 // SERVIDOR EXPRESS PARA API DO DASHBOARD
@@ -93,11 +97,12 @@ app.get('/api/whatsapp/status', (req, res) => {
     const qrData = qrCodes.get(camara_id);
 
     if (client) {
-        return res.json({ ready: true, hasQr: false, qr: null });
+        return res.json({ ready: true, hasQr: false, qr: null, exhausted: false });
     } else if (qrData) {
-        return res.json({ ready: false, hasQr: true, qr: qrData.qr });
+        return res.json({ ready: false, hasQr: true, qr: qrData.qr, exhausted: false });
     } else {
-        return res.json({ ready: false, hasQr: false, qr: null });
+        const exhausted = qrExhausted.has(camara_id);
+        return res.json({ ready: false, hasQr: false, qr: null, exhausted });
     }
 });
 
@@ -165,10 +170,20 @@ app.listen(PORT, () => console.log(`Ouvidoria Worker API rodando na porta ${PORT
 // ==========================================
 async function startWhatsAppForCamara(camaraId) {
     try {
+        qrAttempts.set(camaraId, 0);
+        qrExhausted.delete(camaraId);
         const client = await wppconnect.create({
             session: `camara_${camaraId}`,
             catchQR: (base64Qr, asciiQR) => {
-                console.log(`[!] NOVO QR CODE GERADO PARA CAMARA ${camaraId}. Leia no Painel Admin.`);
+                const current = (qrAttempts.get(camaraId) || 0) + 1;
+                qrAttempts.set(camaraId, current);
+                if (current > 50) {
+                    console.warn(`[${camaraId}] Limite de tentativas de QR atingido (${current}). Aguardando novo comando de início.`);
+                    qrCodes.delete(camaraId);
+                    qrExhausted.add(camaraId);
+                    return;
+                }
+                console.log(`[!] NOVO QR CODE GERADO PARA CAMARA ${camaraId}. Leia no Painel Admin. Tentativa ${current}`);
                 qrCodes.set(camaraId, { qr: base64Qr, timestamp: Date.now() });
             },
             statusFind: (statusSession, session) => {

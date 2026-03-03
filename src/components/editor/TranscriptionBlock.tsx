@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { GripVertical, Trash2, Edit3, Sparkles, ChevronDown, ChevronUp, Clock, MessageSquarePlus, Maximize2, Minimize2, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { TranscriptionBlock as BlockType, BlockType as BlockTypeEnum, blockTypeLabels } from '@/types/transcription';
+import { TranscriptionBlock as BlockType, BlockType as BlockTypeEnum, blockTypeLabels, blockTypeCategories } from '@/types/transcription';
 import { LoadingIcon } from '@/components/ui/loading-icon';
 import {
   Tooltip,
@@ -33,7 +33,7 @@ export function TranscriptionBlock({
   isProcessing,
   dragHandleProps,
 }: TranscriptionBlockProps) {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(!block.summary);
   const [isEditing, setIsEditing] = useState(false);
   const [customPrompt, setCustomPrompt] = useState('');
   const [isPromptOpen, setIsPromptOpen] = useState(false);
@@ -67,10 +67,10 @@ export function TranscriptionBlock({
     >
       {isProcessing && (
         <div className="absolute inset-0 z-50 bg-background/60 backdrop-blur-[2px] flex flex-col items-center justify-center rounded-xl transition-all duration-300">
-           <div className="bg-background/80 p-4 rounded-full shadow-lg border border-border/50">
-             <LoadingIcon className="w-8 h-8 text-purple-500" />
-           </div>
-           <span className="text-xs font-medium text-foreground/80 mt-3 animate-pulse bg-background/50 px-3 py-1 rounded-full">Gerando resumo IA...</span>
+          <div className="bg-background/80 p-4 rounded-full shadow-lg border border-border/50">
+            <LoadingIcon className="w-8 h-8 text-purple-500" />
+          </div>
+          <span className="text-xs font-medium text-foreground/80 mt-3 animate-pulse bg-background/50 px-3 py-1 rounded-full">Gerando resumo IA...</span>
         </div>
       )}
 
@@ -93,10 +93,15 @@ export function TranscriptionBlock({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {Object.entries(blockTypeLabels).map(([value, label]) => (
-              <SelectItem key={value} value={value} className="text-xs">
-                {label}
-              </SelectItem>
+            {blockTypeCategories.map((cat) => (
+              <SelectGroup key={cat.label}>
+                <SelectLabel className="text-[10px] text-muted-foreground uppercase tracking-wider">{cat.label}</SelectLabel>
+                {cat.types.map((t) => (
+                  <SelectItem key={t} value={t} className="text-xs">
+                    {blockTypeLabels[t]}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
             ))}
           </SelectContent>
         </Select>
@@ -110,22 +115,22 @@ export function TranscriptionBlock({
         )}
 
         {isEditing ? (
-             <div className="flex items-center gap-1 bg-background/50 border border-border/30 rounded-md px-2 py-0.5">
-                 <User className="w-3 h-3 text-muted-foreground" />
-                 <Input 
-                    value={block.speaker || ''} 
-                    onChange={(e) => handleSpeakerChange(e.target.value)}
-                    className="h-6 w-32 text-xs border-0 bg-transparent focus-visible:ring-0 p-0"
-                    placeholder="Orador..."
-                 />
-             </div>
+          <div className="flex items-center gap-1 bg-background/50 border border-border/30 rounded-md px-2 py-0.5">
+            <User className="w-3 h-3 text-muted-foreground" />
+            <Input
+              value={block.speaker || ''}
+              onChange={(e) => handleSpeakerChange(e.target.value)}
+              className="h-6 w-32 text-xs border-0 bg-transparent focus-visible:ring-0 p-0"
+              placeholder="Orador..."
+            />
+          </div>
         ) : (
-            block.speaker && (
-              <div className="flex items-center gap-1.5 text-xs font-medium text-foreground/80 bg-primary/5 px-2 py-1 rounded-full border border-primary/10 max-w-[150px]">
-                <User className="w-3 h-3 text-primary/70" />
-                <span className="truncate">{block.speaker}</span>
-              </div>
-            )
+          block.speaker && (
+            <div className="flex items-center gap-1.5 text-xs font-medium text-foreground/80 bg-primary/5 px-2 py-1 rounded-full border border-primary/10 max-w-[150px]">
+              <User className="w-3 h-3 text-primary/70" />
+              <span className="truncate">{block.speaker}</span>
+            </div>
+          )
         )}
 
         <div className="flex-1" />
@@ -310,7 +315,7 @@ export function TranscriptionBlock({
               >
                 <div className="flex items-center gap-2 mb-2 p-3 pb-0">
                   <div className="p-1 rounded-full bg-violet-100 dark:bg-violet-900/30">
-                     <Sparkles className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
+                    <Sparkles className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
                   </div>
                   <span className="text-xs font-bold text-violet-700 dark:text-violet-300 uppercase tracking-wider">
                     Resumo Inteligente
@@ -328,7 +333,7 @@ export function TranscriptionBlock({
 
                   {vereadorInfo && (
                     <div className="flex items-center gap-2 text-xs text-muted-foreground bg-black/5 dark:bg-white/5 p-2 rounded-md">
-                      <span className="font-medium">Vereador:</span> 
+                      <span className="font-medium">Vereador:</span>
                       <span className="font-semibold text-foreground">{vereadorInfo}</span>
                     </div>
                   )}
