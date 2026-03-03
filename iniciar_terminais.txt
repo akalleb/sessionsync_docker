@@ -21,9 +21,15 @@ npm start
 Abra o terminal e conecte-se:
 
 Bash
-ssh root@seu-ip-da-vps
+ssh root@187.77.54.131
 2. Vá para a pasta do projeto
 Sempre certifique-se de estar na pasta onde o Docker "mora":
+
+para o GitHub
+cd f:\python\sessionsync_docker
+git add -A
+git commit -m "fix: worker URL, security fixes from audit"
+git push origin main
 
 Bash
 cd /var/www/sessionsync_docker
@@ -34,6 +40,10 @@ Bash
 git pull origin main
 Dica: Se você fez alguma alteração rápida direto na VPS e o git pull der erro, force a atualização com:
 git reset --hard origin/main
+Depois, na VPS
+/akalleb/sessionsync_docker
+
+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
 
 4. Reconstrua e Reinicie os Containers
 Este é o comando principal. Ele lê o seu docker-compose.yml, reconstrói as imagens com o código novo e reinicia os serviços:

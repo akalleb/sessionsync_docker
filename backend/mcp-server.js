@@ -263,7 +263,10 @@ const TOOL_IMPLEMENTATIONS = {
     // 5. Build Prompt
     const systemPrompt = `Você é um assistente legislativo especializado em redigir atas oficiais de Câmaras Municipais.
 Sua tarefa é gerar uma ata completa, formal e bem estruturada para uma sessão ${minutes_type.toUpperCase()}.
-Use linguagem culta, impessoal e estritamente fiel aos fatos apresentados nos blocos.
+Os textos dos blocos já foram revisados pelo usuário e DEVEM ser tratados como versão final do conteúdo.
+Você NÃO DEVE criar um novo resumo, nem reescrever ou parafrasear os discursos.
+Reorganize e encadeie os blocos em formato de ata, mantendo o conteúdo o mais fiel possível,
+apenas ajustando conectivos, pronomes de referência e pequenos detalhes de coesão/ortografia quando estritamente necessário.
 Siga a estrutura fornecida e as regras de redação oficial.`;
 
     const userPrompt = `
@@ -279,12 +282,12 @@ Duração: ${session.duration || 'Não informada'}
 ESTRUTURA SUGERIDA:
 ${structure.estrutura_sugerida}
 
-BLOCOS DA TRANSCRIÇÃO (Matéria-prima):
+BLOCOS REVISADOS (Matéria-prima – usar o texto como base, sem resumir):
 ${JSON.stringify(session.blocks.map(b => ({
-    tipo: b.type, // (abertura, expediente, ordem_dia, votacao, etc.)
+    tipo: b.type,
     titulo: b.title,
     orador: b.speaker,
-    conteudo: b.summary || b.content // Prefira o resumo se existir
+    conteudo: b.content
 })), null, 2)}
 
 CONTEXTO LEGAL (Use se relevante para fundamentar ritos):
@@ -292,13 +295,13 @@ ${legalContext.map(l => `- ${l.source} (${l.reference}): ${l.content}`).join('\n
 
 REGRAS DE REDAÇÃO:
 1. Cabeçalho: Use o nome da câmara e dados da sessão.
-2. Abertura: Mencione quem presidiu e a verificação de quórum (se houver).
-3. Expediente: Liste leituras de ofícios, projetos e requerimentos de forma resumida.
-4. Ordem do Dia: Detalhe as discussões e, PRINCIPALMENTE, o resultado das votações (Aprovado/Rejeitado/Adiado).
-5. Explicações Pessoais/Grande Expediente: Resuma os discursos dos vereadores, citando o nome de cada orador.
-6. Encerramento: Mencione o horário e a convocação para a próxima sessão.
+2. Abertura: Mencione quem presidiu e a verificação de quórum (se houver), usando o texto dos blocos correspondentes.
+3. Expediente: Agrupe e organize os blocos de expediente, mas mantenha o texto dos blocos, apenas conectando e ajustando pontuação quando necessário.
+4. Ordem do Dia: Organize os blocos dessa fase e destaque claramente o resultado das votações, reutilizando o texto existente nos blocos.
+5. Explicações Pessoais/Grande Expediente: Utilize diretamente o texto dos blocos dos discursos dos vereadores, apenas ajustando conectivos e pronomes, sem resumir ou omitir trechos.
+6. Encerramento: Use o texto dos blocos de encerramento para registrar horário e convocações.
 7. Estilo: Use marcadores Markdown (# para Títulos, ## para Seções, **negrito** para destaques).
-8. Fidelidade: Não invente informações. Se algo não foi dito, não mencione.
+8. Fidelidade: Não invente informações e NÃO RESUMA o conteúdo dos blocos; não apague falas, nomes ou trechos. Se algo não foi dito nos blocos, não mencione.
 
 Gere a ata completa agora:
 `;
