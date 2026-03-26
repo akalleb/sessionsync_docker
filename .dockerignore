@@ -1,0 +1,24 @@
+node_modules
+dist
+.git
+.gitignore
+.vscode
+.idea
+*.log
+**/*.log
+.DS_Store
+
+# Exclude backend from frontend build context
+backend/
+deploy_package/
+
+# Env and tokens
+.env
+backend/.env
+backend/tokens/
+backend/workers/ouvidoria/auth_info/
+
+# Build artifacts
+coverage/
+tmp/
+temp/
