@@ -561,4 +561,66 @@ async function notificarAdmins(camaraId, tipo, resumo, protocolo) {
     }
 }
 
+// ==========================================
+// ROTINA DE ENCERRAMENTO POR INATIVIDADE (30 MIN)
+// ==========================================
+function startInactivityCron() {
+    console.log("Iniciando Cron Job de inatividade (30min)...");
+    
+    // Roda a cada 5 minutos para checar inatividade
+    setInterval(async () => {
+        try {
+            // Calcula timestamp de 30 minutos atrás
+            const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+
+            // Busca tickets que não estão concluídos, cuja última atualização foi há mais de 30 min
+            // e que ainda estão sob cuidado da IA (opcional: ou mesmo humanos se quiser forçar o fim)
+            const { data: inactiveTickets, error } = await supabase
+                .from('ouvidoria_tickets')
+                .select('id, camara_id, whatsapp_number, status')
+                .neq('status', 'concluido')
+                .lt('updated_at', thirtyMinutesAgo);
+
+            if (error) throw error;
+            if (!inactiveTickets || inactiveTickets.length === 0) return;
+
+            console.log(`[CRON] Encontrados ${inactiveTickets.length} tickets inativos. Encerrando...`);
+
+            for (const ticket of inactiveTickets) {
+                // 1. Atualiza o status para concluído
+                await supabase.from('ouvidoria_tickets').update({
+                    status: 'concluido',
+                    ia_session_active: false,
+                    updated_at: new Date().toISOString()
+                }).eq('id', ticket.id);
+
+                // 2. Envia mensagem de aviso via WhatsApp
+                const client = activeClients.get(ticket.camara_id);
+                const msgFim = `Seu atendimento foi encerrado por inatividade. Caso precise de mais alguma coisa, basta enviar uma nova mensagem! A Ouvidoria agradece o seu contato.`;
+
+                if (client) {
+                    try {
+                        await client.sendText(`${ticket.whatsapp_number}@c.us`, msgFim);
+                        
+                        // 3. Salva a mensagem no histórico
+                        await supabase.from('ouvidoria_messages').insert([{
+                            ticket_id: ticket.id,
+                            camara_id: ticket.camara_id,
+                            from_type: 'ia',
+                            direction: 'outbound',
+                            body: msgFim
+                        }]);
+                    } catch (e) {
+                        console.error(`[CRON] Erro ao enviar mensagem de inatividade para ${ticket.whatsapp_number}:`, e);
+                    }
+                }
+            }
+
+        } catch (error) {
+            console.error("[CRON] Erro na verificação de inatividade:", error);
+        }
+    }, 5 * 60 * 1000); // 5 minutos
+}
+
 startRealtimeListener();
+startInactivityCron();

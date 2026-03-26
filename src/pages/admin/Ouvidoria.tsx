@@ -234,7 +234,7 @@ export default function Ouvidoria() {
         .eq('id', selectedTicket.id);
 
     } catch (error) {
-      console.error("Erro", error);
+      console.error("Erro COMPLETO:", JSON.stringify(error, null, 2));
       toast({
         variant: 'destructive',
         title: 'Erro ao enviar',
