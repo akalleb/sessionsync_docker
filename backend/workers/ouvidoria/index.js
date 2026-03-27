@@ -201,13 +201,17 @@ async function startWhatsAppForCamara(camaraId) {
             logQR: false,
             disableWelcome: true,
             autoClose: 0,
+            folderNameToken: 'auth_info', // Define explicitamente a pasta base dos tokens
             puppeteerOptions: {
-                userDataDir: path.join(__dirname, 'auth_info', `camara_${camaraId}`),
+                // userDataDir não é mais necessário aqui, o WPPConnect gerencia internamente usando folderNameToken + session
                 args: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
                     '--disable-dev-shm-usage',
-                    '--disable-gpu'
+                    '--disable-gpu',
+                    '--no-first-run',
+                    '--no-zygote',
+                    '--single-process'
                 ]
             }
         });
