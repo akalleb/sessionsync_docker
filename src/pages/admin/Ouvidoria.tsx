@@ -211,52 +211,36 @@ export default function Ouvidoria() {
     setNewMessage('');
 
     try {
-      // 1. Salva a mensagem no banco
-      const { error } = await supabase
-        .from('ouvidoria_messages')
-        .insert({
-          ticket_id: selectedTicket.id,
+      // 1. Dispara a mensagem ativamente via API HTTP para o Worker do WhatsApp (Garante o envio e bypassa RLS local)
+      const response = await fetch(`${WORKER_API_URL}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
           camara_id: profile?.camara_id,
-          from_type: 'admin',
-          direction: 'outbound',
-          body: tempMsg.body
-        });
-
-      if (error) throw error;
-
-      // 2. Dispara a mensagem ativamente via API HTTP para o Worker do WhatsApp (Garante o envio sem depender de Realtime DB)
-      try {
-        await fetch(`${WORKER_API_URL}/send`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            camara_id: profile?.camara_id,
-            whatsapp_number: selectedTicket.whatsapp_number,
-            message: tempMsg.body
-          })
-        });
-      } catch (workerError) {
-        console.error("Falha ao disparar envio via API HTTP para o Worker:", workerError);
-        // Não jogamos erro principal aqui para não quebrar a UI, o log de cima avisa.
-      }
-
-      // 3. Atualiza o ticket para refletir o atendimento humano e pausar a IA
-      await supabase
-        .from('ouvidoria_tickets')
-        .update({
-          updated_at: new Date().toISOString(),
-          status: 'em_atendimento',
-          ia_session_active: false
+          ticket_id: selectedTicket.id,
+          whatsapp_number: selectedTicket.whatsapp_number,
+          message: tempMsg.body
         })
-        .eq('id', selectedTicket.id);
+      });
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Erro na API do Worker");
+
+      // Atualiza o ticket localmente
+      setSelectedTicket(prev => prev ? { ...prev, status: 'em_atendimento', ia_session_active: false } : null);
+      
+      // Busca mensagens novamente para garantir que a interface atualize mesmo sem o realtime
+      fetchMessages(selectedTicket.id);
 
     } catch (error) {
       console.error("Erro COMPLETO:", JSON.stringify(error, null, 2));
       toast({
         variant: 'destructive',
         title: 'Erro ao enviar',
-        description: 'Sua mensagem não pôde ser salva no banco.'
+        description: 'Sua mensagem não pôde ser enviada.'
       });
+      // Remover a mensagem temporária em caso de erro
+      setMessages(prev => prev.filter(m => m.id !== tempMsg.id));
     }
   };
 

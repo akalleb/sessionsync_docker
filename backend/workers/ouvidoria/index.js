@@ -115,8 +115,10 @@ app.post('/api/whatsapp/logout', async (req, res) => {
     if (client) {
         try {
             await client.logout();
-            await client.close();
         } catch (e) { console.error('Error logging out', e); }
+        try {
+            await client.close();
+        } catch (e) { console.error('Error closing client', e); }
         activeClients.delete(camara_id);
         qrCodes.delete(camara_id);
         res.json({ success: true });
@@ -165,10 +167,10 @@ app.get('/api/whatsapp/messages', async (req, res) => {
 
 // 6. Enviar Mensagem do Admin para o WhatsApp do Cidadão
 app.post('/api/whatsapp/send', async (req, res) => {
-    const { camara_id, whatsapp_number, message } = req.body;
+    const { camara_id, ticket_id, whatsapp_number, message } = req.body;
     
-    if (!camara_id || !whatsapp_number || !message) {
-        return res.status(400).json({ error: "camara_id, whatsapp_number e message são obrigatórios" });
+    if (!camara_id || !whatsapp_number || !message || !ticket_id) {
+        return res.status(400).json({ error: "camara_id, ticket_id, whatsapp_number e message são obrigatórios" });
     }
 
     const client = activeClients.get(camara_id);
@@ -178,6 +180,32 @@ app.post('/api/whatsapp/send', async (req, res) => {
 
     try {
         console.log(`[${camara_id}] API de Envio: Mandando resposta humana para ${whatsapp_number}`);
+        
+        // 1. Salvar no banco (bypassa RLS pq usa Service Role)
+        const { error: dbError } = await supabase.from('ouvidoria_messages').insert({
+            ticket_id,
+            camara_id,
+            from_type: 'admin',
+            direction: 'outbound',
+            body: message
+        });
+
+        if (dbError) {
+            console.error(`[${camara_id}] Erro ao salvar mensagem no banco:`, dbError);
+            throw dbError;
+        }
+
+        // 2. Atualizar status do ticket para 'em_atendimento' e pausar IA
+        await supabase
+            .from('ouvidoria_tickets')
+            .update({
+                updated_at: new Date().toISOString(),
+                status: 'em_atendimento',
+                ia_session_active: false
+            })
+            .eq('id', ticket_id);
+
+        // 3. Enviar no WhatsApp
         // WPPConnect espera apenas o número se já tiver o @c.us, vamos garantir que não duplique
         const formattedNumber = whatsapp_number.includes('@c.us') || whatsapp_number.includes('@g.us') || whatsapp_number.includes('@lid')
             ? whatsapp_number 
