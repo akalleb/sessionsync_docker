@@ -4,6 +4,7 @@ const wppconnect = require('@wppconnect-team/wppconnect');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const OpenAI = require('openai');
 const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
 
@@ -121,9 +122,29 @@ app.post('/api/whatsapp/logout', async (req, res) => {
         } catch (e) { console.error('Error closing client', e); }
         activeClients.delete(camara_id);
         qrCodes.delete(camara_id);
+        
+        // Remove os arquivos de sessão fisicamente para garantir que o próximo login será limpo
+        try {
+            const sessionPath = path.join(process.cwd(), 'auth_info', `camara_${camara_id}`);
+            if (fs.existsSync(sessionPath)) {
+                fs.rmSync(sessionPath, { recursive: true, force: true });
+                console.log(`[${camara_id}] Pasta de sessão (${sessionPath}) apagada com sucesso.`);
+            }
+        } catch (err) {
+            console.error(`[${camara_id}] Erro ao apagar pasta de sessão:`, err);
+        }
+
         res.json({ success: true });
     } else {
-        res.json({ success: false, message: "not_connected" });
+        // Se o client não estava ativo, pelo menos tentamos limpar a pasta caso tenha ficado órfã
+        try {
+            const sessionPath = path.join(process.cwd(), 'auth_info', `camara_${camara_id}`);
+            if (fs.existsSync(sessionPath)) {
+                fs.rmSync(sessionPath, { recursive: true, force: true });
+                console.log(`[${camara_id}] Pasta de sessão órfã apagada com sucesso.`);
+            }
+        } catch (err) {}
+        res.json({ success: false, message: "not_connected_but_cleaned" });
     }
 });
 
