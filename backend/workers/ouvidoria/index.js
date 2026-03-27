@@ -178,7 +178,12 @@ app.post('/api/whatsapp/send', async (req, res) => {
 
     try {
         console.log(`[${camara_id}] API de Envio: Mandando resposta humana para ${whatsapp_number}`);
-        await client.sendText(`${whatsapp_number}@c.us`, message);
+        // WPPConnect espera apenas o número se já tiver o @c.us, vamos garantir que não duplique
+        const formattedNumber = whatsapp_number.includes('@c.us') || whatsapp_number.includes('@g.us') || whatsapp_number.includes('@lid')
+            ? whatsapp_number 
+            : `${whatsapp_number}@c.us`;
+            
+        await client.sendText(formattedNumber, message);
         res.json({ success: true });
     } catch (error) {
         console.error(`[${camara_id}] Erro ao enviar mensagem pela API:`, error);
