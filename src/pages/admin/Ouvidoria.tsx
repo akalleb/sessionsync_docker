@@ -202,7 +202,7 @@ export default function Ouvidoria() {
 
     const tempMsg: Message = {
       id: 'temp-' + Date.now(),
-      from_type: 'admin', // Mudado de humano para admin para refletir o schema
+      from_type: 'admin',
       body: newMessage,
       created_at: new Date().toISOString()
     };
@@ -211,6 +211,7 @@ export default function Ouvidoria() {
     setNewMessage('');
 
     try {
+      // 1. Salva a mensagem no banco
       const { error } = await supabase
         .from('ouvidoria_messages')
         .insert({
@@ -223,13 +224,29 @@ export default function Ouvidoria() {
 
       if (error) throw error;
 
-      // Atualiza o ticket para refletir que um humano tocou nele (opcional depende da regra, por hora só atualiza data)
+      // 2. Dispara a mensagem ativamente via API HTTP para o Worker do WhatsApp (Garante o envio sem depender de Realtime DB)
+      try {
+        await fetch(`${WORKER_API_URL}/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            camara_id: profile?.camara_id,
+            whatsapp_number: selectedTicket.whatsapp_number,
+            message: tempMsg.body
+          })
+        });
+      } catch (workerError) {
+        console.error("Falha ao disparar envio via API HTTP para o Worker:", workerError);
+        // Não jogamos erro principal aqui para não quebrar a UI, o log de cima avisa.
+      }
+
+      // 3. Atualiza o ticket para refletir o atendimento humano e pausar a IA
       await supabase
         .from('ouvidoria_tickets')
         .update({
           updated_at: new Date().toISOString(),
           status: 'em_atendimento',
-          ia_session_active: false // Pausa a IA quando o admin responde
+          ia_session_active: false
         })
         .eq('id', selectedTicket.id);
 
@@ -238,7 +255,7 @@ export default function Ouvidoria() {
       toast({
         variant: 'destructive',
         title: 'Erro ao enviar',
-        description: 'Sua mensagem não pôde ser enviada.'
+        description: 'Sua mensagem não pôde ser salva no banco.'
       });
     }
   };

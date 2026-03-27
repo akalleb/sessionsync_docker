@@ -163,6 +163,29 @@ app.get('/api/whatsapp/messages', async (req, res) => {
     }
 });
 
+// 6. Enviar Mensagem do Admin para o WhatsApp do Cidadão
+app.post('/api/whatsapp/send', async (req, res) => {
+    const { camara_id, whatsapp_number, message } = req.body;
+    
+    if (!camara_id || !whatsapp_number || !message) {
+        return res.status(400).json({ error: "camara_id, whatsapp_number e message são obrigatórios" });
+    }
+
+    const client = activeClients.get(camara_id);
+    if (!client) {
+        return res.status(400).json({ error: "WhatsApp não está conectado para esta câmara" });
+    }
+
+    try {
+        console.log(`[${camara_id}] API de Envio: Mandando resposta humana para ${whatsapp_number}`);
+        await client.sendText(`${whatsapp_number}@c.us`, message);
+        res.json({ success: true });
+    } catch (error) {
+        console.error(`[${camara_id}] Erro ao enviar mensagem pela API:`, error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.listen(PORT, () => console.log(`Ouvidoria Worker API rodando na porta ${PORT}`));
 
 // ==========================================
