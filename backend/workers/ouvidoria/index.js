@@ -195,6 +195,8 @@ async function startWhatsAppForCamara(camaraId) {
     try {
         qrAttempts.set(camaraId, 0);
         qrExhausted.delete(camaraId);
+        qrCodes.delete(camaraId); // Limpa cache de QR code anterior antes de criar a sessão
+
         const client = await wppconnect.create({
             session: `camara_${camaraId}`,
             catchQR: (base64Qr, asciiQR) => {
@@ -213,8 +215,6 @@ async function startWhatsAppForCamara(camaraId) {
                 console.log(`[${camaraId}] Status Session:`, statusSession);
                 if (statusSession === 'isLogged' || statusSession === 'inChat') {
                     qrCodes.delete(camaraId);
-                    // Não acessamos `client` aqui pois causa ReferenceError: Cannot access 'client' before initialization. 
-                    // O cliente será salvo em activeClients logo após o await finalizar.
                 }
             },
             headless: true,
