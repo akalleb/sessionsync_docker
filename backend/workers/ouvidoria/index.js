@@ -330,7 +330,8 @@ function startMessageListener(client, camaraId) {
                 body = message.body || '';
             }
 
-            const senderName = message.notifyName || phone;
+            // Tenta pegar o nome real do usuário de várias fontes disponíveis no WPPConnect
+            const senderName = message.sender?.name || message.sender?.pushname || message.sender?.shortName || message.notifyName || phone.split('@')[0];
 
             console.log(`[${camaraId}] Nova mensagem de ${phone}: ${body.substring(0, 30)}...`);
 
@@ -497,7 +498,7 @@ function startMessageListener(client, camaraId) {
                         if (msgOutboundErr1) console.error(`[${camaraId}] Erro ao salvar msgOutbound1:`, msgOutboundErr1);
                     } else {
                         // Resposta Inválida
-                        const msgErro = `Opção inválida.\nPor favor, digite apenas o *NÚMERO* correspondente:\n1 - Sugestão\n2 - Reclamação\n3 - Elogio\n4 - Denúncia\n5 - Solicitação`;
+                        const msgErro = `Desculpe, não entendi. 😕\nPara continuarmos, por favor, digite *apenas o NÚMERO* correspondente à opção desejada:\n\n1 - Sugestão\n2 - Reclamação\n3 - Elogio\n4 - Denúncia\n5 - Solicitação`;
                         await client.sendText(message.from, msgErro);
 
                         const { error: msgOutboundErr2 } = await supabase.from('ouvidoria_messages').insert([{

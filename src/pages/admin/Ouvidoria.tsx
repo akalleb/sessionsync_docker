@@ -433,7 +433,7 @@ export default function Ouvidoria() {
                         <div className="flex-1 overflow-hidden">
                           <div className="flex justify-between items-start mb-1">
                             <span className="font-semibold truncate">
-                              {ticket.nome || ticket.whatsapp_number}
+                              {ticket.nome && !ticket.nome.includes('@') ? ticket.nome : ticket.whatsapp_number.replace(/@(c\.us|lid|g\.us)$/, '')}
                             </span>
                             <span className="text-xs text-muted-foreground whitespace-nowrap">
                               {format(new Date(ticket.last_message_at), 'HH:mm', { locale: ptBR })}
@@ -492,11 +492,11 @@ export default function Ouvidoria() {
                       </div>
                       <div>
                         <CardTitle className="text-base">
-                          {selectedTicket.nome || selectedTicket.whatsapp_number}
+                          {selectedTicket.nome && !selectedTicket.nome.includes('@') ? selectedTicket.nome : selectedTicket.whatsapp_number.replace(/@(c\.us|lid|g\.us)$/, '')}
                         </CardTitle>
                         <CardDescription className="text-xs flex items-center gap-1">
                           <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
-                          WhatsApp • {selectedTicket.whatsapp_number}
+                          WhatsApp • {selectedTicket.whatsapp_number.replace(/@(c\.us|lid|g\.us)$/, '')}
                         </CardDescription>
                       </div>
                     </div>
