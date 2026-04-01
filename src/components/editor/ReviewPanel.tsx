@@ -12,6 +12,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { toast } from 'sonner';
 
 interface ReviewPanelProps {
   blocks: TranscriptionBlock[];
@@ -126,10 +127,6 @@ function ReviewItem({ block, index, onUpdate, onSummarize, isProcessing }: Revie
   };
 
   const handleSaveEdit = () => {
-    // If it was JSON before, try to preserve structure? For now, simplistic approach: update the text field or raw string
-    // Assuming summary is stored as JSON string in DB usually
-    // We will save as simple string or try to keep JSON if original was JSON
-    
     let newSummary = editedSummary;
     try {
         const parsed = JSON.parse(block.summary || '{}');
@@ -140,8 +137,21 @@ function ReviewItem({ block, index, onUpdate, onSummarize, isProcessing }: Revie
         // Not JSON, just string
     }
 
+    const previousBlock = { ...block };
+
     onUpdate({ ...block, summary: newSummary });
     setIsEditing(false);
+
+    toast.success('Edição salva', {
+      action: {
+        label: 'Desfazer',
+        onClick: () => {
+          onUpdate(previousBlock);
+          toast('Ação desfeita.', { icon: '🔄' });
+        }
+      },
+      duration: 5000,
+    });
   };
 
   const handleCancelEdit = () => {

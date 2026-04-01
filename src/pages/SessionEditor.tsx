@@ -61,18 +61,35 @@ const formatDate = (dateStr: string): string => {
   return date.toLocaleDateString();
 };
 
-// Concurrency-limited parallel execution
+// Concurrency-limited parallel execution with Retries
 async function parallelMap<T, R>(
   items: T[],
   fn: (item: T, index: number) => Promise<R>,
-  concurrency = 3
+  concurrency = 3,
+  maxRetries = 2
 ): Promise<(R | null)[]> {
   const results: (R | null)[] = new Array(items.length).fill(null);
   let nextIndex = 0;
   async function worker() {
     while (nextIndex < items.length) {
       const i = nextIndex++;
-      try { results[i] = await fn(items[i], i); } catch { results[i] = null; }
+      let attempts = 0;
+      let success = false;
+      while (attempts <= maxRetries && !success) {
+        try { 
+          results[i] = await fn(items[i], i); 
+          success = true;
+        } catch (error) { 
+          attempts++;
+          if (attempts <= maxRetries) {
+             console.warn(`Falha na tentativa ${attempts} (item ${i}). Retentando em ${attempts * 2}s...`);
+             await new Promise(resolve => setTimeout(resolve, attempts * 2000));
+          } else {
+             console.error(`Falha definitiva após ${maxRetries + 1} tentativas (item ${i}).`, error);
+             results[i] = null; 
+          }
+        }
+      }
     }
   }
   const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => worker());
