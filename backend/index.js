@@ -558,6 +558,48 @@ app.post('/summarize-content', requireAuth, async (req, res) => {
     }
 });
 
+// 2.5 Refine Summary Selection (Inline Edit AI)
+app.post('/refine-selection', requireAuth, async (req, res) => {
+    try {
+        const { blockContent, selectedText, instruction } = req.body;
+        if (!blockContent || !selectedText) {
+            return res.status(400).json({ error: 'blockContent and selectedText are required' });
+        }
+
+        const systemMsg = `Você é um assistente legislativo de precisão.
+O usuário selecionou um trecho de um resumo para ser reescrito ou corrigido.
+Sua tarefa é reescrever EXCLUSIVAMENTE o trecho selecionado, baseando-se estritamente no conteúdo bruto da transcrição (fatos).
+Não adicione aspas no início ou fim. Não escreva "Aqui está o trecho". 
+Mantenha a fluidez para que o texto reescrito possa ser inserido no lugar do antigo organicamente.
+Retorne SOMENTE o texto reescrito.`;
+
+        const userMsg = `CONTEÚDO BRUTO DO BLOCO (Fatos):
+"${blockContent}"
+
+TRECHO SELECIONADO PELO USUÁRIO (Para reescrever):
+"${selectedText}"
+
+INSTRUÇÃO ESPÉCIFICA DO USUÁRIO:
+${instruction || "Melhore a redação ou corrija erros baseando-se no conteúdo bruto."}`;
+
+        const completion = await openai.chat.completions.create({
+            model: LLM_MODEL,
+            messages: [
+                { role: 'system', content: systemMsg },
+                { role: 'user', content: userMsg }
+            ],
+            temperature: 0.3,
+        });
+
+        const refinedText = completion.choices[0].message.content.trim();
+        res.json({ refinedText });
+
+    } catch (error) {
+        console.error('Refine Selection Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // 3. Summarize Blocks (Batch - Keep for compatibility)
 app.post('/summarize-blocks', requireAuth, async (req, res) => {
     // Reuse summarize-content logic ideally, but keeping original implementation for now or refactoring

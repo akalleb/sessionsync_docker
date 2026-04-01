@@ -1,10 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { TranscriptionBlock, blockTypeLabels } from '@/types/transcription';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
-import { Sparkles, Edit3, Check, X, RotateCcw, MessageSquarePlus, AlertCircle } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Sparkles, Edit3, Check, X, RotateCcw, MessageSquarePlus, AlertCircle, Loader2 } from 'lucide-react';
+import { cn, apiCall } from '@/lib/utils';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import {
@@ -109,6 +109,57 @@ function ReviewItem({ block, index, onUpdate, onSummarize, isProcessing }: Revie
   const [editedSummary, setEditedSummary] = useState('');
   const [isPromptOpen, setIsPromptOpen] = useState(false);
   const [customPrompt, setCustomPrompt] = useState('');
+  
+  // Refinamento de seleção
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [selection, setSelection] = useState({ text: '', start: 0, end: 0 });
+  const [isRefining, setIsRefining] = useState(false);
+
+  const handleSelect = () => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    if (start !== end && end > start) {
+      setSelection({
+        text: editedSummary.substring(start, end),
+        start,
+        end
+      });
+    } else {
+      setSelection({ text: '', start: 0, end: 0 });
+    }
+  };
+
+  const handleRefineSelection = async () => {
+    if (!selection.text) return;
+    try {
+      setIsRefining(true);
+      toast.info('Refinando trecho com IA...');
+      
+      const res = await apiCall('/refine-selection', {
+        blockContent: block.content,
+        selectedText: selection.text,
+        instruction: customPrompt
+      });
+      
+      if (res?.refinedText) {
+        const newText = editedSummary.substring(0, selection.start) + 
+                        res.refinedText + 
+                        editedSummary.substring(selection.end);
+        setEditedSummary(newText);
+        setSelection({ text: '', start: 0, end: 0 });
+        toast.success('Trecho substituído!');
+      } else {
+        toast.error('A IA retornou um trecho vazio.');
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao refinar o trecho com IA.');
+    } finally {
+      setIsRefining(false);
+    }
+  };
 
   // Parse summary content safely
   const summaryText = useMemo(() => {
@@ -274,12 +325,47 @@ function ReviewItem({ block, index, onUpdate, onSummarize, isProcessing }: Revie
           {isEditing ? (
               <div className="space-y-3 animate-in fade-in duration-200">
                   <Textarea 
+                      ref={textareaRef}
                       value={editedSummary} 
                       onChange={(e) => setEditedSummary(e.target.value)}
+                      onSelect={handleSelect}
+                      onClick={handleSelect}
+                      onKeyUp={handleSelect}
                       className="min-h-[120px] text-sm leading-relaxed"
                       placeholder="Edite o resumo..."
                   />
-                  <div className="flex justify-end gap-2">
+
+                  {/* Barra de Ferramentas de Seleção (Aparece se houver texto selecionado) */}
+                  {selection.text && (
+                      <div className="bg-primary/5 border border-primary/20 rounded-md p-2 flex flex-col gap-2 animate-in slide-in-from-bottom-2 fade-in">
+                          <div className="flex items-center justify-between text-xs">
+                              <span className="text-muted-foreground font-medium flex items-center gap-1">
+                                  <Sparkles className="w-3 h-3 text-purple-500" /> Refinar Trecho Marcado
+                              </span>
+                              <span className="text-muted-foreground/60 truncate max-w-[150px] italic">"{selection.text}"</span>
+                          </div>
+                          <div className="flex gap-2">
+                              <Input 
+                                  placeholder="Ex: Corrija o nome, seja mais formal..." 
+                                  className="h-7 text-xs flex-1 bg-background"
+                                  value={customPrompt}
+                                  onChange={(e) => setCustomPrompt(e.target.value)}
+                                  disabled={isRefining}
+                              />
+                              <Button 
+                                  size="sm" 
+                                  onClick={handleRefineSelection} 
+                                  className="h-7 text-xs bg-purple-600 hover:bg-purple-700 text-white"
+                                  disabled={isRefining}
+                              >
+                                  {isRefining ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Sparkles className="w-3 h-3 mr-1" />}
+                                  {isRefining ? 'Gerando...' : 'Aplicar'}
+                              </Button>
+                          </div>
+                      </div>
+                  )}
+
+                  <div className="flex justify-end gap-2 pt-2 border-t border-border/40">
                       <Button size="sm" variant="ghost" onClick={handleCancelEdit} className="h-8 text-xs">
                           <X className="w-3.5 h-3.5 mr-1.5" /> Cancelar
                       </Button>
