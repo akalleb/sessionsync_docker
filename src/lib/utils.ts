@@ -19,7 +19,18 @@ export const apiCall = async (
   method = 'POST',
 ) => {
   const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData.session?.access_token;
+  let session = sessionData.session;
+
+  // Se o token expira em menos de 60 segundos (ou já expirou), força o refresh
+  if (session?.expires_at) {
+    const expiresAtMs = session.expires_at * 1000;
+    if (expiresAtMs - Date.now() < 60_000) {
+      const { data: refreshed } = await supabase.auth.refreshSession();
+      session = refreshed.session;
+    }
+  }
+
+  const token = session?.access_token;
   if (!token) {
     throw new Error('Sessão expirada. Faça login novamente.');
   }
