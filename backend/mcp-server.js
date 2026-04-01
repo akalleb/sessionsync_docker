@@ -308,7 +308,7 @@ Gere a ata completa agora:
 
     // 6. Call LLM
     const completion = await openai.chat.completions.create({
-      model: process.env.LLM_MODEL_MINI || 'openai/gpt-4o-mini',
+      model: process.env.LLM_MODEL || 'openai/gpt-4o',
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt }
@@ -333,6 +333,9 @@ Gere a ata completa agora:
     };
   }
 };
+
+const { TOOLS_DEFINITION } = require('./agent/tools/definitions.js');
+const { executeTool: executeAgentTool } = require('./agent/tools/executor.js');
 
 async function executeTool(toolName, args, context) {
   const tool = TOOL_IMPLEMENTATIONS[toolName];
@@ -362,21 +365,35 @@ function setupMcpServer(app, { getSupabaseClient, getServiceSupabase, openai }) 
 
     try {
       if (method === 'tools/list') {
+        const mcpTools = Object.entries(TOOLS).map(([name, def]) => ({
+          name,
+          ...def
+        }));
+        const agentTools = TOOLS_DEFINITION.map(t => ({
+          name: t.function.name,
+          description: t.function.description,
+          parameters: t.function.parameters
+        }));
         return res.json({
           jsonrpc: "2.0",
           id,
           result: {
-            tools: Object.entries(TOOLS).map(([name, def]) => ({
-              name,
-              ...def
-            }))
+            tools: [...mcpTools, ...agentTools]
           }
         });
       }
 
       if (method === 'tools/call') {
         const { name, arguments: args } = params;
-        const result = await executeTool(name, args, context);
+        
+        let result;
+        if (TOOLS[name]) {
+            result = await executeTool(name, args, context);
+        } else {
+            // Agent tool fallback
+            result = await executeAgentTool(name, args);
+        }
+
         return res.json({
           jsonrpc: "2.0",
           id,

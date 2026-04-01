@@ -12,9 +12,9 @@ async function getSpeeches({ camaraId, vereador, session_id, data_inicial, data_
   if (data_inicial) query = query.gte('date', data_inicial);
   if (data_final) query = query.lte('date', data_final);
 
-  // Fetch up to 50 sessions to avoid memory issues (or pagination)
-  // For ranking, we might need more, but let's limit for now
-  const { data: sessions, error } = await query.limit(50).order('date', { ascending: false });
+  // Reduzir o limite para evitar OOM (Out of Memory) devido ao parsing pesado da coluna JSONB 'blocks'
+  const maxSessions = agrupar_por_vereador ? 20 : 10;
+  const { data: sessions, error } = await query.limit(maxSessions).order('date', { ascending: false });
 
   if (error) return { erro: error.message };
   if (!sessions?.length) return { resultado: 'Nenhuma sessão encontrada para buscar discursos.' };
